@@ -14,15 +14,6 @@
     body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f7fb; }
     .glass { backdrop-filter: blur(10px); background: rgba(255,255,255,0.78); }
     .grid-auto-fit { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-    .mobile-nav { display: none; }
-    @media (max-width: 768px) {
-      .mobile-nav { display: flex; }
-      .desktop-nav { display: none; }
-    }
-    @media (min-width: 769px) {
-      .mobile-nav { display: none !important; }
-      .desktop-nav { display: flex; }
-    }
   </style>
 </head>
 <body>
@@ -37,8 +28,6 @@
     const DRIVE_FOLDER_ID = '16tE9MUvmE4H1iPnRG59qhod_I3HiTytw';
     const DRIVE_FOLDER_URL = `https://drive.google.com/drive/folders/${DRIVE_FOLDER_ID}?usp=sharing`;
     const DRIVE_EMBED_URL = `https://drive.google.com/embeddedfolderview?id=${DRIVE_FOLDER_ID}#grid`;
-    const GOOGLE_DRIVE_API_KEY = 'AIzaSyA5iWmjK8nnZgmWJuQbqCGeDmHzlize2hY';
-    const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3/files';
 
     const formatter = new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
     const currency = (n) => `Rp ${formatter.format(Math.round(Number(n) || 0))}`;
@@ -123,102 +112,6 @@
       return Number.isNaN(parsed.getTime()) ? null : parsed;
     }
 
-
-
-    function detectYearFromText(text='') {
-      const match = String(text).match(/(?:19|20)\d{2}/);
-      return match ? match[0] : '';
-    }
-
-    function buildDriveThumbnail(fileId, size = 1200) {
-      return `https://drive.google.com/thumbnail?id=${fileId}&sz=w${size}`;
-    }
-
-    function buildDriveViewUrl(fileId) {
-      return `https://drive.google.com/file/d/${fileId}/view`;
-    }
-
-    async function listDriveChildren(folderId, apiKey, pageToken='') {
-      const query = `'${folderId}' in parents and trashed = false`;
-      const params = new URLSearchParams({
-        key: apiKey,
-        q: query,
-        fields: 'nextPageToken, files(id,name,mimeType,webViewLink,thumbnailLink,createdTime,imageMediaMetadata)',
-        orderBy: 'folder,name,createdTime desc',
-        pageSize: '1000',
-        includeItemsFromAllDrives: 'true',
-        supportsAllDrives: 'true',
-      });
-      if (pageToken) params.set('pageToken', pageToken);
-      const response = await fetch(`${DRIVE_API_BASE}?${params.toString()}`);
-      if (!response.ok) {
-        throw new Error('Tidak dapat mengakses Google Drive API. Pastikan API key benar dan folder dibagikan publik.');
-      }
-      return response.json();
-    }
-
-    async function getGalleryYearsFromDrive(folderId, apiKey) {
-      try {
-        const data = await listDriveChildren(folderId, apiKey);
-        const years = new Set();
-        for (const file of (data.files || [])) {
-          const lowerMime = String(file.mimeType || '').toLowerCase();
-          if (lowerMime === 'application/vnd.google-apps.folder') {
-            const year = detectYearFromText(file.name);
-            if (year) years.add(year);
-          }
-        }
-        return Array.from(years).map(y => Number(y)).sort((a, b) => b - a);
-      } catch (error) {
-        console.warn('Gagal mengambil daftar tahun dari Drive:', error);
-        return [];
-      }
-    }
-
-    async function fetchAllDriveImages(rootFolderId, apiKey) {
-      const foldersToVisit = [{ id: rootFolderId, path: [], inferredYear: '' }];
-      const photos = [];
-      while (foldersToVisit.length) {
-        const current = foldersToVisit.shift();
-        let pageToken = '';
-        do {
-          const data = await listDriveChildren(current.id, apiKey, pageToken);
-          pageToken = data.nextPageToken || '';
-          for (const file of (data.files || [])) {
-            const lowerMime = String(file.mimeType || '').toLowerCase();
-            if (lowerMime === 'application/vnd.google-apps.folder') {
-              const folderYear = detectYearFromText(file.name) || current.inferredYear || '';
-              foldersToVisit.push({
-                id: file.id,
-                path: [...current.path, file.name],
-                inferredYear: folderYear,
-              });
-              continue;
-            }
-            if (!lowerMime.startsWith('image/')) continue;
-            const folderPath = current.path.join(' / ');
-            const detectedYear = current.inferredYear || detectYearFromText(`${folderPath} ${file.name} ${file.createdTime || ''}`) || (file.createdTime ? new Date(file.createdTime).getFullYear().toString() : 'Tanpa Tahun');
-            photos.push({
-              id: file.id,
-              name: file.name,
-              url: buildDriveThumbnail(file.id, 1600),
-              thumb: buildDriveThumbnail(file.id, 800),
-              webViewLink: file.webViewLink || buildDriveViewUrl(file.id),
-              folderPath: folderPath || 'Folder Utama',
-              year: detectedYear || 'Tanpa Tahun',
-              createdTime: file.createdTime || '',
-            });
-          }
-        } while (pageToken);
-      }
-      return photos.sort((a, b) => {
-        const ay = Number(a.year) || 0;
-        const by = Number(b.year) || 0;
-        if (by !== ay) return by - ay;
-        return String(b.createdTime).localeCompare(String(a.createdTime));
-      });
-    }
-
     function transformRows(rawRows) {
       const cleaned = rawRows.map(r => r.map(c => String(c || '').trim()));
       const records = [];
@@ -247,14 +140,14 @@
 
     function StatCard({ title, value, subtitle, icon, accent='from-sky-500 to-blue-600' }) {
       return (
-        <div className="rounded-2xl sm:rounded-3xl bg-white shadow-sm border border-slate-100 p-4 sm:p-6">
-          <div className="flex items-start justify-between gap-3 sm:gap-4">
+        <div className="rounded-2xl bg-white shadow-sm border border-slate-100 p-5">
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-xs sm:text-sm uppercase tracking-wide text-slate-500">{title}</div>
-              <div className="mt-2 text-xl sm:text-2xl lg:text-3xl font-bold text-slate-800">{value}</div>
-              {subtitle && <div className="mt-1 text-xs sm:text-sm text-slate-500">{subtitle}</div>}
+              <div className="text-xs uppercase tracking-wide text-slate-500">{title}</div>
+              <div className="mt-2 text-2xl font-bold text-slate-800">{value}</div>
+              {subtitle && <div className="mt-1 text-sm text-slate-500">{subtitle}</div>}
             </div>
-            <div className={`h-10 sm:h-12 w-10 sm:w-12 rounded-2xl bg-gradient-to-br ${accent} text-white flex items-center justify-center text-lg sm:text-xl shadow shrink-0`}>{icon}</div>
+            <div className={`h-12 w-12 rounded-2xl bg-gradient-to-br ${accent} text-white flex items-center justify-center text-xl shadow`}>{icon}</div>
           </div>
         </div>
       );
@@ -262,10 +155,10 @@
 
     function SectionTitle({ eyebrow, title, desc }) {
       return (
-        <div className="max-w-3xl mx-auto text-center mb-8 sm:mb-10">
-          {eyebrow && <div className="text-xs sm:text-sm font-semibold uppercase tracking-[0.2em] text-sky-700">{eyebrow}</div>}
-          <h2 className="mt-2 sm:mt-3 text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900">{title}</h2>
-          {desc && <p className="mt-2 sm:mt-3 text-sm sm:text-base text-slate-600 leading-6 sm:leading-7">{desc}</p>}
+        <div className="max-w-3xl mx-auto text-center mb-10">
+          {eyebrow && <div className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-700">{eyebrow}</div>}
+          <h2 className="mt-2 text-3xl md:text-4xl font-bold text-slate-900">{title}</h2>
+          {desc && <p className="mt-3 text-slate-600 leading-7">{desc}</p>}
         </div>
       );
     }
@@ -332,37 +225,7 @@
       const [query, setQuery] = useState('');
       const [yearFilter, setYearFilter] = useState('');
       const [currentPage, setCurrentPage] = useState(1);
-      const [galleryPhotos, setGalleryPhotos] = useState([]);
-      const [galleryLoading, setGalleryLoading] = useState(true);
-      const [galleryError, setGalleryError] = useState('');
-      const [selectedGalleryYear, setSelectedGalleryYear] = useState('');
-      const [galleryIndex, setGalleryIndex] = useState(0);
-      const [galleryPhotosLoaded, setGalleryPhotosLoaded] = useState({});
-      const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-      const [availableGalleryYears, setAvailableGalleryYears] = useState([]);
       const itemsPerPage = 10;
-
-      // Load available gallery years from Google Drive folders on mount
-      useEffect(() => {
-        let mounted = true;
-        async function loadAvailableYears() {
-          if (!GOOGLE_DRIVE_API_KEY || GOOGLE_DRIVE_API_KEY === 'PASTE_YOUR_GOOGLE_DRIVE_API_KEY_HERE') {
-            return;
-          }
-          try {
-            const years = await getGalleryYearsFromDrive(DRIVE_FOLDER_ID, GOOGLE_DRIVE_API_KEY);
-            if (mounted) {
-              setAvailableGalleryYears(years);
-            }
-          } catch (err) {
-            console.warn('Gagal memuat daftar tahun galeri:', err);
-          }
-        }
-        loadAvailableYears();
-        return () => {
-          mounted = false;
-        };
-      }, []);
 
       useEffect(() => {
         fetch(CSV_URL)
@@ -376,41 +239,6 @@
           })
           .finally(() => setLoading(false));
       }, []);
-
-
-
-      useEffect(() => {
-        let mounted = true;
-        async function loadGalleryByYear() {
-          if (!selectedGalleryYear || selectedGalleryYear === '') return;
-          if (galleryPhotosLoaded[selectedGalleryYear]) return;
-          
-          if (!GOOGLE_DRIVE_API_KEY || GOOGLE_DRIVE_API_KEY === 'PASTE_YOUR_GOOGLE_DRIVE_API_KEY_HERE') {
-            if (mounted) {
-              setGalleryError('Galeri otomatis belum aktif. Isi GOOGLE_DRIVE_API_KEY agar foto dari seluruh folder/subfolder dapat dimuat.');
-              setGalleryLoading(false);
-            }
-            return;
-          }
-          
-          try {
-            setGalleryLoading(true);
-            const photos = await fetchAllDriveImages(DRIVE_FOLDER_ID, GOOGLE_DRIVE_API_KEY);
-            if (mounted) {
-              setGalleryPhotos(photos);
-              setGalleryPhotosLoaded(prev => ({...prev, [selectedGalleryYear]: true}));
-              if (!photos.length) setGalleryError('Belum ada foto publik yang ditemukan di folder dokumentasi.');
-              else setGalleryError('');
-            }
-          } catch (err) {
-            if (mounted) setGalleryError(err.message || 'Galeri otomatis gagal dimuat dari Google Drive API.');
-          } finally {
-            if (mounted) setGalleryLoading(false);
-          }
-        }
-        loadGalleryByYear();
-        return () => { mounted = false; };
-      }, [selectedGalleryYear, galleryPhotosLoaded]);
 
       // Set default year filter ke tahun terakhir
       useEffect(() => {
@@ -452,41 +280,6 @@
       useEffect(() => {
         setCurrentPage(1);
       }, [yearFilter, query]);
-
-
-
-      const galleryYears = useMemo(() => {
-        // Prioritize years from Google Drive folder structure
-        if (availableGalleryYears.length > 0) {
-          return availableGalleryYears;
-        }
-        // Fallback to years detected from photos
-        const years = [...new Set(galleryPhotos.map(item => item.year).filter(Boolean))]
-          .sort((a, b) => (Number(b) || 0) - (Number(a) || 0));
-        return years;
-      }, [galleryPhotos, availableGalleryYears]);
-
-      const filteredGalleryPhotos = useMemo(() => {
-        return galleryPhotos.filter(item => selectedGalleryYear === 'all' || item.year === selectedGalleryYear);
-      }, [galleryPhotos, selectedGalleryYear]);
-
-      useEffect(() => {
-        setGalleryIndex(0);
-      }, [selectedGalleryYear, galleryPhotos.length]);
-
-      useEffect(() => {
-        if (filteredGalleryPhotos.length <= 1) return;
-        const interval = setInterval(() => {
-          setGalleryIndex(prev => (prev + 1) % filteredGalleryPhotos.length);
-        }, 3500);
-        return () => clearInterval(interval);
-      }, [filteredGalleryPhotos.length]);
-
-      const visibleGalleryPhotos = useMemo(() => {
-        if (!filteredGalleryPhotos.length) return [];
-        const count = Math.min(4, filteredGalleryPhotos.length);
-        return Array.from({ length: count }, (_, offset) => filteredGalleryPhotos[(galleryIndex + offset) % filteredGalleryPhotos.length]);
-      }, [filteredGalleryPhotos, galleryIndex]);
 
       const stats = useMemo(() => {
         const totalPemasukan = yearFilteredRows.reduce((s, r) => s + r.kredit, 0);
@@ -541,65 +334,54 @@
         <div className="min-h-screen text-slate-800">
           <header className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-200">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-              <a href="#beranda" className="flex items-center gap-2 sm:gap-3 font-bold text-slate-900 shrink-0">
-                <img src="logo.png" alt="RESAM Logo" className="h-8 sm:h-10 w-8 sm:w-10 rounded-xl shadow object-contain" />
+              <a href="#beranda" className="flex items-center gap-3 font-bold text-slate-900">
+                <img src="logo.png" alt="RESAM Logo" className="h-10 w-10 rounded-xl shadow object-contain" />
                 <div>
-                  <div className="text-sm sm:text-lg leading-none">RESAM</div>
-                  <div className="text-[10px] sm:text-xs text-slate-500 font-medium">Dari Kite Untuk Same-Same</div>
+                  <div className="text-lg leading-none">RESAM</div>
+                  <div className="text-xs text-slate-500 font-medium">Dari Kite Untuk Same-Same</div>
                 </div>
               </a>
-              <nav className="desktop-nav items-center gap-6 text-sm text-slate-600">
-                <a href="#beranda" className="hover:text-sky-700 transition">Beranda</a>
-                <a href="#tentang" className="hover:text-sky-700 transition">Tentang</a>
-                <a href="#keuangan" className="hover:text-sky-700 transition">Data</a>
-                <a href="#dokumentasi" className="hover:text-sky-700 transition">Dokumentasi</a>
+              <nav className="hidden md:flex items-center gap-6 text-sm text-slate-600">
+                <a href="#beranda" className="hover:text-sky-700">Beranda</a>
+                <a href="#tentang" className="hover:text-sky-700">Tentang</a>
+                <a href="#keuangan" className="hover:text-sky-700">Data</a>
+                <a href="#dokumentasi" className="hover:text-sky-700">Dokumentasi</a>
               </nav>
-              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="mobile-nav items-center gap-3 text-slate-700">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
-              </button>
             </div>
-            {mobileMenuOpen && (
-              <div className="mobile-nav flex-col px-4 py-3 border-t border-slate-200 bg-slate-50 gap-2">
-                <a href="#beranda" onClick={() => setMobileMenuOpen(false)} className="py-2 text-slate-700 hover:text-sky-700 transition">Beranda</a>
-                <a href="#tentang" onClick={() => setMobileMenuOpen(false)} className="py-2 text-slate-700 hover:text-sky-700 transition">Tentang</a>
-                <a href="#keuangan" onClick={() => setMobileMenuOpen(false)} className="py-2 text-slate-700 hover:text-sky-700 transition">Data</a>
-                <a href="#dokumentasi" onClick={() => setMobileMenuOpen(false)} className="py-2 text-slate-700 hover:text-sky-700 transition">Dokumentasi</a>
-              </div>
-            )}
           </header>
 
           <section id="beranda" className="bg-gradient-to-br from-sky-50 via-white to-indigo-50 border-b border-slate-200">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 lg:py-24">
-              <div className="grid lg:grid-cols-2 gap-8 sm:gap-12 items-center">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-24">
+              <div className="grid lg:grid-cols-2 gap-12 items-center">
                 <div>
-                  <div className="inline-flex items-center gap-2 rounded-full bg-white shadow-sm border border-sky-100 px-3 sm:px-4 py-2 text-xs sm:text-sm text-sky-700 font-semibold">Platform transparansi dana kebersamaan BPS Provinsi Kepulauan Bangka Belitung</div>
-                  <h1 className="mt-4 sm:mt-6 text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight text-slate-900">RESAM</h1>
-                  <div className="mt-2 sm:mt-3 text-lg sm:text-2xl text-sky-700 font-semibold">"Dari Kite Untuk Same-Same"</div>
-                  <p className="mt-4 sm:mt-6 text-base sm:text-lg leading-7 sm:leading-8 text-slate-600">Sistem informasi RESAM menampilkan sejarah singkat program, pengelolaan dana RESAM dan dana sosial, statistik keuangan, serta dokumentasi kegiatan dalam satu tampilan yang ringkas, modern, dan mudah diakses.</p>
-                  <div className="mt-6 sm:mt-8 flex flex-wrap gap-3 sm:gap-4">
-                    <a href="#keuangan" className="rounded-2xl bg-sky-600 hover:bg-sky-700 text-white px-4 sm:px-6 py-2.5 sm:py-3 font-semibold shadow transition text-sm sm:text-base">Lihat Data</a>
-                    <a href={DRIVE_FOLDER_URL} target="_blank" className="rounded-2xl bg-rose-600 hover:bg-rose-700 text-white px-4 sm:px-6 py-2.5 sm:py-3 font-semibold shadow transition text-sm sm:text-base">Publikasi Lebih Lanjut</a>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-white shadow-sm border border-sky-100 px-4 py-2 text-sm text-sky-700 font-semibold">Platform transparansi dana kebersamaan BPS Provinsi Kepulauan Bangka Belitung</div>
+                  <h1 className="mt-6 text-5xl md:text-6xl font-black tracking-tight text-slate-900">RESAM</h1>
+                  <div className="mt-3 text-2xl text-sky-700 font-semibold">“Dari Kite Untuk Same-Same”</div>
+                  <p className="mt-6 text-lg leading-8 text-slate-600">Sistem informasi RESAM menampilkan sejarah singkat program, pengelolaan dana RESAM dan dana sosial, statistik keuangan, serta dokumentasi kegiatan dalam satu tampilan yang ringkas, modern, dan mudah diakses.</p>
+                  <div className="mt-8 flex flex-wrap gap-4">
+                    <a href="#keuangan" className="rounded-2xl bg-sky-600 hover:bg-sky-700 text-white px-6 py-3 font-semibold shadow">Lihat Data</a>
+                    <a href={DRIVE_FOLDER_URL} target="_blank" className="rounded-2xl bg-rose-600 hover:bg-rose-700 text-white px-6 py-3 font-semibold shadow">Publikasi Lebih Lanjut</a>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
-                  <div className="glass rounded-3xl p-4 sm:p-6 shadow-lg border border-white/80">
-                    <div className="text-xs sm:text-sm text-slate-500">Total Pemasukan</div>
-                    <div className="mt-2 text-2xl sm:text-3xl font-bold">{currency(stats.totalPemasukan)}</div>
-                    <div className="mt-1 text-xs sm:text-sm text-slate-500">Berdasarkan data spreadsheet aktif</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div className="glass rounded-3xl p-6 shadow-lg border border-white/80">
+                    <div className="text-sm text-slate-500">Total Pemasukan</div>
+                    <div className="mt-2 text-3xl font-bold">{currency(stats.totalPemasukan)}</div>
+                    <div className="mt-1 text-sm text-slate-500">Berdasarkan data spreadsheet aktif</div>
                   </div>
-                  <div className="glass rounded-3xl p-4 sm:p-6 shadow-lg border border-white/80">
-                    <div className="text-xs sm:text-sm text-slate-500">Total Pengeluaran</div>
-                    <div className="mt-2 text-2xl sm:text-3xl font-bold">{currency(stats.totalPengeluaran)}</div>
-                    <div className="mt-1 text-xs sm:text-sm text-slate-500">Akumulasi seluruh debit</div>
+                  <div className="glass rounded-3xl p-6 shadow-lg border border-white/80">
+                    <div className="text-sm text-slate-500">Total Pengeluaran</div>
+                    <div className="mt-2 text-3xl font-bold">{currency(stats.totalPengeluaran)}</div>
+                    <div className="mt-1 text-sm text-slate-500">Akumulasi seluruh debit</div>
                   </div>
-                  <div className="glass rounded-3xl p-4 sm:p-6 shadow-lg border border-white/80 sm:col-span-2">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                  <div className="glass rounded-3xl p-6 shadow-lg border border-white/80 sm:col-span-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                       <div>
-                        <div className="text-xs sm:text-sm text-slate-500">Saldo Akhir Tercatat</div>
-                        <div className="mt-2 text-3xl sm:text-4xl font-black text-slate-900">{currency(stats.saldoAkhir)}</div>
+                        <div className="text-sm text-slate-500">Saldo Akhir Tercatat</div>
+                        <div className="mt-2 text-4xl font-black text-slate-900">{currency(stats.saldoAkhir)}</div>
                       </div>
-                      <div className="text-xs sm:text-sm text-slate-500">
-                        {stats.latest ? `Update: ${stats.latest.tanggal.toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'2-digit' })}` : 'Menunggu data'}
+                      <div className="text-sm text-slate-500">
+                        {stats.latest ? `Update terakhir: ${stats.latest.tanggal.toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' })}` : 'Menunggu data'}
                       </div>
                     </div>
                   </div>
@@ -608,20 +390,20 @@
             </div>
           </section>
 
-          <section className="py-12 sm:py-16 lg:py-20 bg-white">
+          <section className="py-20 bg-white">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
               <SectionTitle eyebrow="Keunggulan" title="Keunggulan RESAM" desc="Dirancang untuk memperkuat transparansi, kebersamaan, dan kemudahan akses informasi pengelolaan dana." />
-              <div className="grid grid-auto-fit gap-4 sm:gap-6">
+              <div className="grid grid-auto-fit gap-6">
                 {[
                   ['Transparan', 'Akses data pemasukan, pengeluaran, dan saldo secara terbuka serta mudah ditelusuri.', '🔎'],
                   ['Solidaritas', 'Mendorong kebersamaan dan semangat gotong royong antar pegawai BPS.', '🤝'],
                   ['Mudah Diakses', 'Dibuat dalam tampilan web responsif yang bisa dibuka dari berbagai perangkat.', '📱'],
                   ['Berkelanjutan', 'Mendukung pengelolaan dana secara tertib, terdokumentasi, dan konsisten.', '♻️'],
                 ].map(([title, desc, icon]) => (
-                  <div key={title} className="rounded-3xl border border-slate-200 p-4 sm:p-6 shadow-sm hover:shadow-md transition bg-slate-50/50">
-                    <div className="h-12 sm:h-14 w-12 sm:w-14 rounded-2xl bg-white shadow flex items-center justify-center text-xl sm:text-2xl">{icon}</div>
-                    <h3 className="mt-3 sm:mt-4 text-lg sm:text-xl font-bold">{title}</h3>
-                    <p className="mt-2 text-sm sm:text-base text-slate-600 leading-6 sm:leading-7">{desc}</p>
+                  <div key={title} className="rounded-3xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition bg-slate-50/50">
+                    <div className="h-14 w-14 rounded-2xl bg-white shadow flex items-center justify-center text-2xl">{icon}</div>
+                    <h3 className="mt-4 text-xl font-bold">{title}</h3>
+                    <p className="mt-2 text-slate-600 leading-7">{desc}</p>
                   </div>
                 ))}
               </div>
@@ -661,175 +443,42 @@
             </div>
           </section>
 
-          <section id="dokumentasi" className="py-12 sm:py-16 lg:py-20 bg-slate-900 text-white">
+          <section id="dokumentasi" className="py-20 bg-slate-900 text-white">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-              <SectionTitle eyebrow="Galeri" title="Dokumentasi Kegiatan RESAM & DANSOS" desc="Pilih tahun untuk melihat dokumentasi kegiatan. Galeri mengambil foto otomatis dari folder Google Drive berdasarkan tahun yang dipilih." />
-
-              <div className="rounded-3xl border border-white/10 bg-slate-800/90 shadow-2xl overflow-hidden">
-                {/* Year Selection Panel */}
-                <div className="p-4 sm:p-6 border-b border-white/10 bg-slate-900/50">
-                  <div className="mb-4">
-                    <h3 className="text-lg sm:text-xl font-bold mb-3">📅 Pilih Tahun Dokumentasi</h3>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => setSelectedGalleryYear('all')}
-                        className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                          selectedGalleryYear === 'all'
-                            ? 'bg-sky-500 border-sky-400 text-white'
-                            : 'bg-white/10 border border-white/20 text-slate-200 hover:bg-white/20'
-                        }`}
-                      >
-                        Semua Tahun
-                      </button>
-                      {galleryYears.map(year => (
-                        <button
-                          key={year}
-                          onClick={() => setSelectedGalleryYear(String(year))}
-                          className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                            selectedGalleryYear === String(year)
-                              ? 'bg-sky-500 border-sky-400 text-white'
-                              : 'bg-white/10 border border-white/20 text-slate-200 hover:bg-white/20'
-                          }`}
-                        >
-                          {year}
-                        </button>
-                      ))}
-                    </div>
+              <SectionTitle eyebrow="Galeri" title="Dokumentasi Kegiatan RESAM & DANSOS" desc="Folder dokumentasi publik dapat ditampilkan langsung melalui Google Drive untuk memudahkan penelusuran foto, poster, atau arsip kegiatan." />
+              <div className="rounded-3xl overflow-hidden border border-white/10 shadow-2xl bg-slate-800">
+                <div className="p-4 border-b border-white/10 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold">Folder Dokumentasi</div>
+                    <div className="text-sm text-slate-300">Tampilan embed Google Drive</div>
                   </div>
-                  <p className="text-xs sm:text-sm text-slate-300 mt-3">💡 Pilih tahun di atas untuk memuat dan menampilkan foto dari tahun tersebut</p>
+                  <a href={DRIVE_FOLDER_URL} target="_blank" className="rounded-xl bg-rose-500 hover:bg-rose-600 px-4 py-2 font-semibold text-white">Buka Semua Dokumentasi</a>
                 </div>
-
-                {/* Gallery Display */}
-                <div className="p-4 sm:p-6">
-                  {galleryError && (
-                    <div className="mb-5 rounded-2xl border border-amber-400/40 bg-amber-400/10 text-amber-100 px-4 sm:px-5 py-3 sm:py-4 text-sm">
-                      ⚠️ {galleryError}
-                    </div>
-                  )}
-
-                  {galleryLoading || (selectedGalleryYear && !galleryPhotosLoaded[selectedGalleryYear]) ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                      {[1,2,3,4].map(i => (
-                        <div key={i} className="h-40 sm:h-48 lg:h-56 rounded-2xl sm:rounded-3xl bg-white/5 animate-pulse border border-white/10"></div>
-                      ))}
-                    </div>
-                  ) : visibleGalleryPhotos.length ? (
-                    <>
-                      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                        {visibleGalleryPhotos.map((photo, idx) => (
-                          <a
-                            key={`${photo.id}-${idx}`}
-                            href={photo.webViewLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="group relative overflow-hidden rounded-2xl sm:rounded-3xl border border-white/10 bg-slate-950 shadow-lg h-40 sm:h-48 lg:h-56 hover:shadow-xl transition"
-                          >
-                            <img
-                              src={photo.thumb || photo.url}
-                              alt={photo.name}
-                              className="h-full w-full object-cover transition duration-500 group-hover:scale-110"
-                              loading="lazy"
-                              onError={(e) => { e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 400 300%22%3E%3Crect fill=%22%23374151%22 width=%22400%22 height=%22300%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-family=%22Arial%22 font-size=%2220%22 fill=%22%239CA3AF%22%3EFoto tidak dapat dimuat%3C/text%3E%3C/svg%3E'; }}
-                            />
-                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent p-3 sm:p-4">
-                              <div className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-sky-300 font-semibold">{photo.year}</div>
-                              <div className="mt-1 font-semibold text-xs sm:text-sm line-clamp-2">{photo.name}</div>
-                              <div className="mt-0.5 text-[10px] sm:text-xs text-slate-400 line-clamp-1">{photo.folderPath}</div>
-                            </div>
-                          </a>
-                        ))}
-                      </div>
-
-                      <div className="mt-5 sm:mt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-300">
-                        <div className="text-xs sm:text-sm">
-                          <span className="font-semibold">{visibleGalleryPhotos.length}</span> foto ditampilkan
-                          {selectedGalleryYear && selectedGalleryYear !== 'all' ? (
-                            <> dari <span className="font-semibold">{filteredGalleryPhotos.length}</span> foto tahun <span className="font-semibold">{selectedGalleryYear}</span></>
-                          ) : (
-                            <> dari total <span className="font-semibold">{filteredGalleryPhotos.length}</span> foto</>
-                          )}
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => setGalleryIndex(prev => filteredGalleryPhotos.length ? (prev - 1 + filteredGalleryPhotos.length) % filteredGalleryPhotos.length : 0)}
-                            disabled={filteredGalleryPhotos.length <= 1}
-                            className="rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed px-3 sm:px-4 py-2 font-semibold text-sm transition"
-                          >
-                            ← Sebelumnya
-                          </button>
-                          <div className="text-xs sm:text-sm font-semibold bg-white/10 rounded-lg px-3 py-2 whitespace-nowrap">
-                            {filteredGalleryPhotos.length > 0 ? `${galleryIndex + 1} / ${filteredGalleryPhotos.length}` : '0 / 0'}
-                          </div>
-                          <button
-                            onClick={() => setGalleryIndex(prev => filteredGalleryPhotos.length ? (prev + 1) % filteredGalleryPhotos.length : 0)}
-                            disabled={filteredGalleryPhotos.length <= 1}
-                            className="rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed px-3 sm:px-4 py-2 font-semibold text-sm transition"
-                          >
-                            Selanjutnya →
-                          </button>
-                        </div>
-                      </div>
-                    </>
-                  ) : selectedGalleryYear ? (
-                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 sm:px-6 py-8 sm:py-10 text-center">
-                      <div className="text-slate-400 text-sm sm:text-base">Belum ada foto yang ditemukan untuk tahun yang dipilih.</div>
-                      <button
-                        onClick={() => setSelectedGalleryYear('all')}
-                        className="mt-4 rounded-lg bg-sky-500 hover:bg-sky-600 px-4 py-2 font-semibold text-sm transition"
-                      >
-                        Lihat Semua Tahun
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 px-4 sm:px-6 py-8 sm:py-10 text-center">
-                      <div className="text-slate-400 text-sm sm:text-base">👆 Pilih tahun di atas untuk melihat dokumentasi kegiatan</div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Drive Folder Link */}
-                <div className="border-t border-white/10 p-4 sm:p-6 bg-slate-950/50">
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div>
-                      <div className="font-semibold text-sm sm:text-base">📂 Explorer Folder Dokumentasi</div>
-                      <div className="text-xs sm:text-sm text-slate-400 mt-1">Lihat semua isi folder di Google Drive</div>
-                    </div>
-                    <a href={DRIVE_FOLDER_URL} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-rose-500 hover:bg-rose-600 px-4 py-2.5 font-semibold text-white text-sm transition whitespace-nowrap">
-                      ➜ Buka di Drive
-                    </a>
-                  </div>
-                </div>
-              </div>
-
-              {/* Embedded Drive Viewer */}
-              <div className="mt-6 sm:mt-8 rounded-3xl overflow-hidden border border-white/10 shadow-2xl bg-slate-800 hidden sm:block">
-                <div className="p-4 sm:p-6 border-b border-white/10 bg-slate-900/50">
-                  <div className="font-semibold text-sm sm:text-base">📋 Grid View - Semua Dokumentasi</div>
-                  <div className="text-xs sm:text-sm text-slate-400 mt-1">Tampilan lengkap folder dokumentasi dari Google Drive</div>
-                </div>
-                <iframe title="Dokumentasi RESAM" src={DRIVE_EMBED_URL} className="w-full h-96 sm:h-[520px] bg-white"></iframe>
+                <iframe title="Dokumentasi RESAM" src={DRIVE_EMBED_URL} className="w-full h-[520px] bg-white"></iframe>
               </div>
             </div>
           </section>
 
-          <section id="keuangan" className="py-12 sm:py-16 lg:py-20 bg-slate-100">
+          <section id="keuangan" className="py-20 bg-slate-100">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
               <SectionTitle eyebrow="Data & Statistik" title="Pengelolaan Dana RESAM dan DANSOS" desc="Menampilkan ringkasan keuangan berdasarkan data spreadsheet aktif, termasuk statistik pemasukan, pengeluaran, saldo, tabel transaksi, dan komposisi pengeluaran." />
 
-              {error && <div className="mb-6 sm:mb-8 rounded-2xl border border-amber-300 bg-amber-50 text-amber-800 px-4 sm:px-5 py-3 sm:py-4 text-sm">{error}</div>}
+              {error && <div className="mb-8 rounded-2xl border border-amber-300 bg-amber-50 text-amber-800 px-5 py-4">{error}</div>}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
                 <StatCard title="Total Pemasukan" value={currency(stats.totalPemasukan)} subtitle="Akumulasi seluruh kredit" icon="💰" accent="from-sky-500 to-blue-600" />
                 <StatCard title="Total Pengeluaran" value={currency(stats.totalPengeluaran)} subtitle="Akumulasi seluruh debit" icon="📤" accent="from-rose-500 to-pink-600" />
                 <StatCard title="Saldo Akhir" value={currency(stats.saldoAkhir)} subtitle="Saldo terakhir tercatat" icon="✅" accent="from-emerald-500 to-green-600" />
                 <StatCard title="Dana Sosial Terdeteksi" value={currency(stats.danaSosial)} subtitle="Berdasarkan transaksi terkait dansos" icon="🤲" accent="from-amber-500 to-orange-500" />
               </div>
 
-              <div className="mt-6 sm:mt-8 grid lg:grid-cols-2 gap-4 sm:gap-6">
-                <div className="rounded-2xl sm:rounded-3xl bg-white border border-slate-200 p-4 sm:p-6 shadow-sm">
-                  <div className="mb-3 sm:mb-4">
-                    <h3 className="text-lg sm:text-xl font-bold">Perkembangan Saldo</h3>
-                    <p className="text-sm text-slate-500">Rekap saldo berdasarkan bulan pencatatan</p>
+              <div className="mt-8 grid lg:grid-cols-2 gap-6">
+                <div className="rounded-3xl bg-white border border-slate-200 p-6 shadow-sm">
+                  <div className="flex items-center justify-between gap-4 mb-4">
+                    <div>
+                      <h3 className="text-xl font-bold">Perkembangan Saldo</h3>
+                      <p className="text-sm text-slate-500">Rekap saldo berdasarkan bulan pencatatan</p>
+                    </div>
                   </div>
                   {monthlySeries.length ? <LineChart labels={monthlySeries.map(x => x.label)} data={monthlySeries.map(x => x.saldo)} /> : <div className="text-slate-500">Belum ada data.</div>}
                 </div>
@@ -879,36 +528,36 @@
                 </div>
               </div>
 
-              <div className="mt-6 sm:mt-8 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 p-4 sm:p-6 shadow-sm">
-                <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3 sm:gap-4 mb-5">
+              <div className="mt-8 rounded-3xl bg-white border border-slate-200 p-6 shadow-sm">
+                <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-5">
                   <div>
-                    <h3 className="text-lg sm:text-xl font-bold">Tabel Data Transaksi</h3>
-                    <p className="text-xs sm:text-sm text-slate-500 mt-1">Pencarian cepat berdasarkan kata kunci dan filter tahun.</p>
+                    <h3 className="text-xl font-bold">Tabel Data Transaksi</h3>
+                    <p className="text-sm text-slate-500">Pencarian cepat berdasarkan kata kunci dan filter tahun.</p>
                   </div>
-                  <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
-                    <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cari uraian..." className="rounded-lg sm:rounded-xl border border-slate-300 px-3 sm:px-4 py-2.5 sm:py-3 w-full sm:w-72 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 text-sm" />
-                    <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="rounded-lg sm:rounded-xl border border-slate-300 px-3 sm:px-4 py-2.5 sm:py-3 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 text-sm">
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cari uraian, rincian, atau tanggal..." className="rounded-xl border border-slate-300 px-4 py-3 w-full sm:w-72 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200" />
+                    <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200">
                       <option value="all">Semua Tahun</option>
                       {years.map(y => <option key={y} value={String(y)}>{y}</option>)}
                     </select>
-                    <a href={CSV_URL} target="_blank" rel="noopener noreferrer" className="rounded-lg sm:rounded-xl bg-sky-600 hover:bg-sky-700 text-white px-3 sm:px-4 py-2.5 sm:py-3 text-center font-semibold shadow transition text-sm whitespace-nowrap">Unduh CSV</a>
+                    <a href={CSV_URL} target="_blank" className="rounded-xl bg-sky-600 hover:bg-sky-700 text-white px-4 py-3 text-center font-semibold shadow transition">Unduh CSV</a>
                   </div>
                 </div>
 
                 <div className="space-y-3">
-                  <div className="text-xs sm:text-sm text-slate-600 font-medium">
+                  <div className="text-sm text-slate-600 font-medium">
                     Menampilkan {paginatedRows.length ? (currentPage - 1) * itemsPerPage + 1 : 0} - {Math.min(currentPage * itemsPerPage, filteredRows.length)} dari {filteredRows.length} transaksi
                     {yearFilter !== 'all' && ` • Tahun ${yearFilter}`}
                   </div>
-                  <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow">
-                    <table className="min-w-full text-xs sm:text-sm">
+                  <div className="overflow-auto rounded-2xl border border-slate-200 shadow">
+                    <table className="min-w-full text-sm">
                       <thead className="bg-gradient-to-r from-slate-600 to-slate-700 text-white sticky top-0">
                         <tr>
-                          <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-left font-semibold w-8 sm:w-12">#</th>
-                          <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-left font-semibold">Tanggal</th>
-                          <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-left font-semibold">Uraian</th>
-                          <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-left font-semibold hidden sm:table-cell">Rincian</th>
-                          <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-right font-semibold">Kredit</th>
+                          <th className="px-4 py-3 text-left font-semibold w-12">#</th>
+                          <th className="px-4 py-3 text-left font-semibold">Tanggal</th>
+                          <th className="px-4 py-3 text-left font-semibold">Uraian</th>
+                          <th className="px-4 py-3 text-left font-semibold">Rincian</th>
+                          <th className="px-4 py-3 text-right font-semibold">Kredit</th>
                           <th className="px-4 py-3 text-right font-semibold">Debit</th>
                           <th className="px-4 py-3 text-right font-semibold">Saldo</th>
                         </tr>
