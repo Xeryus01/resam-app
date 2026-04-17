@@ -224,6 +224,8 @@
       const [error, setError] = useState('');
       const [query, setQuery] = useState('');
       const [yearFilter, setYearFilter] = useState('');
+      const [currentPage, setCurrentPage] = useState(1);
+      const itemsPerPage = 10;
 
       useEffect(() => {
         fetch(CSV_URL)
@@ -252,32 +254,48 @@
         return [...new Set(rows.map(r => r.tanggal.getFullYear()))].sort((a,b) => b-a);
       }, [rows]);
 
+      // Filter by year only for stats/charts
+      const yearFilteredRows = useMemo(() => {
+        return rows.filter(r => {
+          return yearFilter === 'all' || String(r.tanggal.getFullYear()) === yearFilter;
+        }).sort((a, b) => b.tanggal - a.tanggal);
+      }, [rows, yearFilter]);
+
+      // Filter by year and search query for table
       const filteredRows = useMemo(() => {
-        const filtered = rows.filter(r => {
-          const matchesYear = yearFilter === 'all' || String(r.tanggal.getFullYear()) === yearFilter;
+        return yearFilteredRows.filter(r => {
           const text = `${r.tanggalRaw} ${r.uraian} ${r.rincian}`.toLowerCase();
-          const matchesQuery = !query.trim() || text.includes(query.toLowerCase());
-          return matchesYear && matchesQuery;
+          return !query.trim() || text.includes(query.toLowerCase());
         });
-        // Sort dari paling baru
-        return filtered.sort((a, b) => b.tanggal - a.tanggal);
-      }, [rows, yearFilter, query]);
+      }, [yearFilteredRows, query]);
+
+      // Pagination logic
+      const totalPages = Math.ceil(filteredRows.length / itemsPerPage);
+      const paginatedRows = useMemo(() => {
+        const start = (currentPage - 1) * itemsPerPage;
+        return filteredRows.slice(start, start + itemsPerPage);
+      }, [filteredRows, currentPage]);
+
+      // Reset to page 1 when filter changes
+      useEffect(() => {
+        setCurrentPage(1);
+      }, [yearFilter, query]);
 
       const stats = useMemo(() => {
-        const totalPemasukan = rows.reduce((s, r) => s + r.kredit, 0);
-        const totalPengeluaran = rows.reduce((s, r) => s + r.debit, 0);
-        const saldoAkhir = rows.length ? rows[rows.length - 1].saldo : 0;
-        const totalTransaksi = rows.length;
-        const latest = rows.length ? rows[rows.length - 1] : null;
-        const danaSosial = rows
+        const totalPemasukan = yearFilteredRows.reduce((s, r) => s + r.kredit, 0);
+        const totalPengeluaran = yearFilteredRows.reduce((s, r) => s + r.debit, 0);
+        const saldoAkhir = yearFilteredRows.length ? yearFilteredRows[yearFilteredRows.length - 1].saldo : 0;
+        const totalTransaksi = yearFilteredRows.length;
+        const latest = yearFilteredRows.length ? yearFilteredRows[yearFilteredRows.length - 1] : null;
+        const danaSosial = yearFilteredRows
           .filter(r => slug(`${r.uraian} ${r.rincian}`).includes('dana sosial') || slug(r.uraian).includes('dansos'))
           .reduce((s, r) => s + Math.max(r.debit, r.kredit), 0);
         return { totalPemasukan, totalPengeluaran, saldoAkhir, totalTransaksi, latest, danaSosial };
-      }, [rows]);
+      }, [yearFilteredRows]);
 
       const monthlySeries = useMemo(() => {
         const map = new Map();
-        rows.forEach(r => {
+        yearFilteredRows.forEach(r => {
           const key = `${r.tanggal.getFullYear()}-${String(r.tanggal.getMonth()+1).padStart(2,'0')}`;
           map.set(key, { label: r.tanggal.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' }), saldo: r.saldo, income: 0, expense: 0 });
           const item = map.get(key);
@@ -287,11 +305,11 @@
         });
         const arr = [...map.values()];
         return arr;
-      }, [rows]);
+      }, [yearFilteredRows]);
 
       const expenseByCategory = useMemo(() => {
         const bucket = {};
-        rows.filter(r => r.debit > 0).forEach(r => {
+        yearFilteredRows.filter(r => r.debit > 0).forEach(r => {
           const text = slug(`${r.uraian} ${r.rincian}`);
           let category = 'Lainnya';
           if (text.includes('konsumsi') || text.includes('makan') || text.includes('snack') || text.includes('air mineral') || text.includes('teh') || text.includes('kopi')) category = 'Konsumsi';
@@ -301,14 +319,14 @@
           bucket[category] = (bucket[category] || 0) + r.debit;
         });
         return bucket;
-      }, [rows]);
+      }, [yearFilteredRows]);
 
       const highlights = useMemo(() => {
-        return rows
+        return yearFilteredRows
           .filter(r => r.debit > 0)
           .sort((a,b) => b.debit - a.debit)
           .slice(0, 5);
-      }, [rows]);
+      }, [yearFilteredRows]);
 
       const resamDefinition = `RESAM merupakan singkatan dari “Dari Kite Untuk Same-Same”, yaitu urunan seluruh pegawai BPS Provinsi Kepulauan Bangka Belitung (tidak termasuk pegawai outsourcing) sesuai rate yang telah disepakati. Dana ini dikelola oleh Pengurus RESAM dan dimanfaatkan untuk kegiatan kebersamaan serta kegiatan sosial yang melibatkan seluruh pegawai termasuk pegawai outsourcing.`;
 
@@ -528,7 +546,7 @@
 
                 <div className="space-y-3">
                   <div className="text-sm text-slate-600 font-medium">
-                    Menampilkan {filteredRows.length} dari {rows.length} transaksi
+                    Menampilkan {paginatedRows.length ? (currentPage - 1) * itemsPerPage + 1 : 0} - {Math.min(currentPage * itemsPerPage, filteredRows.length)} dari {filteredRows.length} transaksi
                     {yearFilter !== 'all' && ` • Tahun ${yearFilter}`}
                   </div>
                   <div className="overflow-auto rounded-2xl border border-slate-200 shadow">
@@ -548,9 +566,9 @@
                         {loading ? (
                           <tr><td colSpan="7" className="px-4 py-8 text-center text-slate-500">Memuat data...</td></tr>
                         ) : filteredRows.length ? (
-                          filteredRows.map((r, idx) => (
+                          paginatedRows.map((r, idx) => (
                             <tr key={idx} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition`}>
-                              <td className="px-4 py-3 text-slate-500 font-medium text-center w-12">{idx + 1}</td>
+                              <td className="px-4 py-3 text-slate-500 font-medium text-center w-12">{(currentPage - 1) * itemsPerPage + idx + 1}</td>
                               <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-900">{r.tanggal.toLocaleDateString('id-ID')}</td>
                               <td className="px-4 py-3 font-semibold text-slate-800">{r.uraian || '—'}</td>
                               <td className="px-4 py-3 text-slate-600">{r.rincian || '—'}</td>
@@ -565,6 +583,45 @@
                       </tbody>
                     </table>
                   </div>
+                  
+                  {filteredRows.length > 0 && totalPages > 1 && (
+                    <div className="flex flex-wrap items-center justify-between gap-4 mt-4">
+                      <div className="text-sm text-slate-600">
+                        Halaman {currentPage} dari {totalPages}
+                      </div>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
+                          disabled={currentPage === 1}
+                          className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                        >
+                          ← Sebelumnya
+                        </button>
+                        <div className="flex gap-1">
+                          {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                            <button
+                              key={page}
+                              onClick={() => setCurrentPage(page)}
+                              className={`px-3 py-2 rounded-lg font-medium ${
+                                currentPage === page
+                                  ? 'bg-sky-600 text-white'
+                                  : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                              }`}
+                            >
+                              {page}
+                            </button>
+                          ))}
+                        </div>
+                        <button 
+                          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
+                          disabled={currentPage === totalPages}
+                          className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                        >
+                          Selanjutnya →
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
