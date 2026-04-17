@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RESAM - Dari Kite Untuk Same-Same</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    html { scroll-behavior: smooth; }
+    body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f7fb; }
+    .glass { backdrop-filter: blur(10px); background: rgba(255,255,255,0.78); }
+    .grid-auto-fit { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useEffect, useMemo, useRef, useState } = React;
+
+    const SHEET_ID = '1zI1n2EcXCTfaSvejnbtMMYV3ykGmQu-j';
+    const SHEET_GID = '378656488';
+    const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`;
+    const DRIVE_FOLDER_ID = '16tE9MUvmE4H1iPnRG59qhod_I3HiTytw';
+    const DRIVE_FOLDER_URL = `https://drive.google.com/drive/folders/${DRIVE_FOLDER_ID}?usp=sharing`;
+    const DRIVE_EMBED_URL = `https://drive.google.com/embeddedfolderview?id=${DRIVE_FOLDER_ID}#grid`;
+
+    const formatter = new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    const currency = (n) => `Rp ${formatter.format(Math.round(Number(n) || 0))}`;
+
+    function slug(text='') {
+      return text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    }
+
+    function parseNumber(value) {
+      if (value == null) return 0;
+      let s = String(value).trim();
+      if (!s) return 0;
+      // Hapus Rp dan spasi
+      s = s.replace(/rp/gi, '').replace(/\s+/g, '').trim();
+      // Format: koma adalah pemisah ribuan (hapus), titik adalah desimal
+      s = s.replace(/,/g, '');
+      const num = Number(s);
+      return Number.isFinite(num) ? num : 0;
+    }
+
+    function parseCSV(text) {
+      const rows = [];
+      let row = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const next = text[i + 1];
+        if (char === '"') {
+          if (inQuotes && next === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === ',' && !inQuotes) {
+          row.push(current);
+          current = '';
+        } else if ((char === '\n' || char === '\r') && !inQuotes) {
+          if (char === '\r' && next === '\n') i++;
+          row.push(current);
+          rows.push(row);
+          row = [];
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      if (current.length || row.length) {
+        row.push(current);
+        rows.push(row);
+      }
+      return rows.filter(r => r.some(c => String(c || '').trim() !== ''));
+    }
+
+    function parseDateIndo(str) {
+      if (!str) return null;
+      const value = String(str).trim();
+      const months = {
+        jan: 0, januari: 0,
+        feb: 1, februari: 1,
+        mar: 2, maret: 2,
+        apr: 3, april: 3,
+        mei: 4,
+        jun: 5, juni: 5,
+        jul: 6, juli: 6,
+        ags: 7, agu: 7, agustus: 7,
+        sep: 8, september: 8,
+        okt: 9, oktober: 9,
+        nov: 10, november: 10,
+        des: 11, desember: 11,
+      };
+      const clean = value.replace(/\s+/g, '-').replace(/–/g, '-');
+      const parts = clean.split('-').map(v => v.trim()).filter(Boolean);
+      if (parts.length >= 3) {
+        const d = parseInt(parts[0], 10);
+        const m = months[slug(parts[1])];
+        const y = parseInt(parts[2], 10) < 100 ? 2000 + parseInt(parts[2], 10) : parseInt(parts[2], 10);
+        if (!Number.isNaN(d) && m !== undefined && !Number.isNaN(y)) return new Date(y, m, d);
+      }
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    function transformRows(rawRows) {
+      const cleaned = rawRows.map(r => r.map(c => String(c || '').trim()));
+      const records = [];
+      for (const r of cleaned) {
+        if (r.length < 2) continue;
+        const dateCandidate = parseDateIndo(r[0]);
+        if (!dateCandidate) continue;
+        const uraian = r[1] || '';
+        const rincian = r[2] || '';
+        const kredit = parseNumber(r[3]);
+        const debit = parseNumber(r[4]);
+        const saldo = parseNumber(r[5]);
+        if (!uraian && !rincian && !kredit && !debit && !saldo) continue;
+        records.push({
+          tanggalRaw: r[0],
+          tanggal: dateCandidate,
+          uraian,
+          rincian,
+          kredit,
+          debit,
+          saldo,
+        });
+      }
+      return records.sort((a,b) => a.tanggal - b.tanggal);
+    }
+
+    function StatCard({ title, value, subtitle, icon, accent='from-sky-500 to-blue-600' }) {
+      return (
+        <div className="rounded-2xl bg-white shadow-sm border border-slate-100 p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs uppercase tracking-wide text-slate-500">{title}</div>
+              <div className="mt-2 text-2xl font-bold text-slate-800">{value}</div>
+              {subtitle && <div className="mt-1 text-sm text-slate-500">{subtitle}</div>}
+            </div>
+            <div className={`h-12 w-12 rounded-2xl bg-gradient-to-br ${accent} text-white flex items-center justify-center text-xl shadow`}>{icon}</div>
+          </div>
+        </div>
+      );
+    }
+
+    function SectionTitle({ eyebrow, title, desc }) {
+      return (
+        <div className="max-w-3xl mx-auto text-center mb-10">
+          {eyebrow && <div className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-700">{eyebrow}</div>}
+          <h2 className="mt-2 text-3xl md:text-4xl font-bold text-slate-900">{title}</h2>
+          {desc && <p className="mt-3 text-slate-600 leading-7">{desc}</p>}
+        </div>
+      );
+    }
+
+    function LineChart({ labels, data }) {
+      const canvasRef = useRef(null);
+      useEffect(() => {
+        if (!canvasRef.current || !window.Chart) return;
+        const chart = new Chart(canvasRef.current, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Saldo',
+              data,
+              borderWidth: 2,
+              tension: 0.3,
+              fill: false,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: true } },
+            scales: {
+              y: {
+                ticks: {
+                  callback: (value) => 'Rp ' + formatter.format(value)
+                }
+              }
+            }
+          }
+        });
+        return () => chart.destroy();
+      }, [labels.join('|'), data.join('|')]);
+      return <div className="h-72"><canvas ref={canvasRef}></canvas></div>;
+    }
+
+    function DoughnutChart({ labels, data }) {
+      const canvasRef = useRef(null);
+      useEffect(() => {
+        if (!canvasRef.current || !window.Chart) return;
+        const chart = new Chart(canvasRef.current, {
+          type: 'doughnut',
+          data: {
+            labels,
+            datasets: [{ data, borderWidth: 1 }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom' } }
+          }
+        });
+        return () => chart.destroy();
+      }, [labels.join('|'), data.join('|')]);
+      return <div className="h-72"><canvas ref={canvasRef}></canvas></div>;
+    }
+
+    function App() {
+      const [rows, setRows] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState('');
+      const [query, setQuery] = useState('');
+      const [yearFilter, setYearFilter] = useState('');
+
+      useEffect(() => {
+        fetch(CSV_URL)
+          .then(res => res.text())
+          .then(text => {
+            const parsed = transformRows(parseCSV(text));
+            setRows(parsed);
+          })
+          .catch(() => {
+            setError('Data spreadsheet tidak dapat dimuat otomatis. Silakan cek koneksi atau izin file Google Sheets.');
+          })
+          .finally(() => setLoading(false));
+      }, []);
+
+      // Set default year filter ke tahun terakhir
+      useEffect(() => {
+        if (rows.length > 0) {
+          const years = [...new Set(rows.map(r => r.tanggal.getFullYear()))].sort((a,b) => b-a);
+          if (years.length > 0 && !yearFilter) {
+            setYearFilter(String(years[0]));
+          }
+        }
+      }, [rows, yearFilter]);
+
+      const years = useMemo(() => {
+        return [...new Set(rows.map(r => r.tanggal.getFullYear()))].sort((a,b) => b-a);
+      }, [rows]);
+
+      const filteredRows = useMemo(() => {
+        const filtered = rows.filter(r => {
+          const matchesYear = yearFilter === 'all' || String(r.tanggal.getFullYear()) === yearFilter;
+          const text = `${r.tanggalRaw} ${r.uraian} ${r.rincian}`.toLowerCase();
+          const matchesQuery = !query.trim() || text.includes(query.toLowerCase());
+          return matchesYear && matchesQuery;
+        });
+        // Sort dari paling baru
+        return filtered.sort((a, b) => b.tanggal - a.tanggal);
+      }, [rows, yearFilter, query]);
+
+      const stats = useMemo(() => {
+        const totalPemasukan = rows.reduce((s, r) => s + r.kredit, 0);
+        const totalPengeluaran = rows.reduce((s, r) => s + r.debit, 0);
+        const saldoAkhir = rows.length ? rows[rows.length - 1].saldo : 0;
+        const totalTransaksi = rows.length;
+        const latest = rows.length ? rows[rows.length - 1] : null;
+        const danaSosial = rows
+          .filter(r => slug(`${r.uraian} ${r.rincian}`).includes('dana sosial') || slug(r.uraian).includes('dansos'))
+          .reduce((s, r) => s + Math.max(r.debit, r.kredit), 0);
+        return { totalPemasukan, totalPengeluaran, saldoAkhir, totalTransaksi, latest, danaSosial };
+      }, [rows]);
+
+      const monthlySeries = useMemo(() => {
+        const map = new Map();
+        rows.forEach(r => {
+          const key = `${r.tanggal.getFullYear()}-${String(r.tanggal.getMonth()+1).padStart(2,'0')}`;
+          map.set(key, { label: r.tanggal.toLocaleDateString('id-ID', { month: 'short', year: 'numeric' }), saldo: r.saldo, income: 0, expense: 0 });
+          const item = map.get(key);
+          item.income += r.kredit;
+          item.expense += r.debit;
+          item.saldo = r.saldo || item.saldo;
+        });
+        const arr = [...map.values()];
+        return arr;
+      }, [rows]);
+
+      const expenseByCategory = useMemo(() => {
+        const bucket = {};
+        rows.filter(r => r.debit > 0).forEach(r => {
+          const text = slug(`${r.uraian} ${r.rincian}`);
+          let category = 'Lainnya';
+          if (text.includes('konsumsi') || text.includes('makan') || text.includes('snack') || text.includes('air mineral') || text.includes('teh') || text.includes('kopi')) category = 'Konsumsi';
+          else if (text.includes('donor darah') || text.includes('dana sosial') || text.includes('dansos')) category = 'Dana Sosial';
+          else if (text.includes('hut') || text.includes('bedulang') || text.includes('hsn') || text.includes('sejati') || text.includes('jumat bersih')) category = 'Kegiatan';
+          else if (text.includes('spanduk') || text.includes('gelas') || text.includes('plastik') || text.includes('paper')) category = 'Perlengkapan';
+          bucket[category] = (bucket[category] || 0) + r.debit;
+        });
+        return bucket;
+      }, [rows]);
+
+      const highlights = useMemo(() => {
+        return rows
+          .filter(r => r.debit > 0)
+          .sort((a,b) => b.debit - a.debit)
+          .slice(0, 5);
+      }, [rows]);
+
+      const resamDefinition = `RESAM merupakan singkatan dari “Dari Kite Untuk Same-Same”, yaitu urunan seluruh pegawai BPS Provinsi Kepulauan Bangka Belitung (tidak termasuk pegawai outsourcing) sesuai rate yang telah disepakati. Dana ini dikelola oleh Pengurus RESAM dan dimanfaatkan untuk kegiatan kebersamaan serta kegiatan sosial yang melibatkan seluruh pegawai termasuk pegawai outsourcing.`;
+
+      return (
+        <div className="min-h-screen text-slate-800">
+          <header className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-200">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+              <a href="#beranda" className="flex items-center gap-3 font-bold text-slate-900">
+                <img src="logo.png" alt="RESAM Logo" className="h-10 w-10 rounded-xl shadow object-contain" />
+                <div>
+                  <div className="text-lg leading-none">RESAM</div>
+                  <div className="text-xs text-slate-500 font-medium">Dari Kite Untuk Same-Same</div>
+                </div>
+              </a>
+              <nav className="hidden md:flex items-center gap-6 text-sm text-slate-600">
+                <a href="#beranda" className="hover:text-sky-700">Beranda</a>
+                <a href="#tentang" className="hover:text-sky-700">Tentang</a>
+                <a href="#keuangan" className="hover:text-sky-700">Data</a>
+                <a href="#dokumentasi" className="hover:text-sky-700">Dokumentasi</a>
+              </nav>
+            </div>
+          </header>
+
+          <section id="beranda" className="bg-gradient-to-br from-sky-50 via-white to-indigo-50 border-b border-slate-200">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-24">
+              <div className="grid lg:grid-cols-2 gap-12 items-center">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-white shadow-sm border border-sky-100 px-4 py-2 text-sm text-sky-700 font-semibold">Platform transparansi dana kebersamaan BPS Provinsi Kepulauan Bangka Belitung</div>
+                  <h1 className="mt-6 text-5xl md:text-6xl font-black tracking-tight text-slate-900">RESAM</h1>
+                  <div className="mt-3 text-2xl text-sky-700 font-semibold">“Dari Kite Untuk Same-Same”</div>
+                  <p className="mt-6 text-lg leading-8 text-slate-600">Sistem informasi RESAM menampilkan sejarah singkat program, pengelolaan dana RESAM dan dana sosial, statistik keuangan, serta dokumentasi kegiatan dalam satu tampilan yang ringkas, modern, dan mudah diakses.</p>
+                  <div className="mt-8 flex flex-wrap gap-4">
+                    <a href="#keuangan" className="rounded-2xl bg-sky-600 hover:bg-sky-700 text-white px-6 py-3 font-semibold shadow">Lihat Data</a>
+                    <a href={DRIVE_FOLDER_URL} target="_blank" className="rounded-2xl bg-rose-600 hover:bg-rose-700 text-white px-6 py-3 font-semibold shadow">Publikasi Lebih Lanjut</a>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                  <div className="glass rounded-3xl p-6 shadow-lg border border-white/80">
+                    <div className="text-sm text-slate-500">Total Pemasukan</div>
+                    <div className="mt-2 text-3xl font-bold">{currency(stats.totalPemasukan)}</div>
+                    <div className="mt-1 text-sm text-slate-500">Berdasarkan data spreadsheet aktif</div>
+                  </div>
+                  <div className="glass rounded-3xl p-6 shadow-lg border border-white/80">
+                    <div className="text-sm text-slate-500">Total Pengeluaran</div>
+                    <div className="mt-2 text-3xl font-bold">{currency(stats.totalPengeluaran)}</div>
+                    <div className="mt-1 text-sm text-slate-500">Akumulasi seluruh debit</div>
+                  </div>
+                  <div className="glass rounded-3xl p-6 shadow-lg border border-white/80 sm:col-span-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                      <div>
+                        <div className="text-sm text-slate-500">Saldo Akhir Tercatat</div>
+                        <div className="mt-2 text-4xl font-black text-slate-900">{currency(stats.saldoAkhir)}</div>
+                      </div>
+                      <div className="text-sm text-slate-500">
+                        {stats.latest ? `Update terakhir: ${stats.latest.tanggal.toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' })}` : 'Menunggu data'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="py-20 bg-white">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <SectionTitle eyebrow="Keunggulan" title="Keunggulan RESAM" desc="Dirancang untuk memperkuat transparansi, kebersamaan, dan kemudahan akses informasi pengelolaan dana." />
+              <div className="grid grid-auto-fit gap-6">
+                {[
+                  ['Transparan', 'Akses data pemasukan, pengeluaran, dan saldo secara terbuka serta mudah ditelusuri.', '🔎'],
+                  ['Solidaritas', 'Mendorong kebersamaan dan semangat gotong royong antar pegawai BPS.', '🤝'],
+                  ['Mudah Diakses', 'Dibuat dalam tampilan web responsif yang bisa dibuka dari berbagai perangkat.', '📱'],
+                  ['Berkelanjutan', 'Mendukung pengelolaan dana secara tertib, terdokumentasi, dan konsisten.', '♻️'],
+                ].map(([title, desc, icon]) => (
+                  <div key={title} className="rounded-3xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition bg-slate-50/50">
+                    <div className="h-14 w-14 rounded-2xl bg-white shadow flex items-center justify-center text-2xl">{icon}</div>
+                    <h3 className="mt-4 text-xl font-bold">{title}</h3>
+                    <p className="mt-2 text-slate-600 leading-7">{desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <section id="tentang" className="py-20 bg-slate-50 border-y border-slate-200">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <SectionTitle eyebrow="Tentang" title="Sejarah Singkat RESAM" desc="Inisiatif kebersamaan internal yang dikelola untuk mendukung kegiatan sosial dan kebersamaan di lingkungan BPS Provinsi Kepulauan Bangka Belitung." />
+              <div className="grid lg:grid-cols-2 gap-8 items-start">
+                <div className="rounded-3xl bg-white border border-slate-200 shadow-sm p-8">
+                  <div className="inline-flex rounded-full bg-sky-100 text-sky-700 px-4 py-2 text-sm font-semibold">Definisi RESAM</div>
+                  <p className="mt-5 text-slate-700 leading-8">{resamDefinition}</p>
+                  <ul className="mt-6 space-y-3 text-slate-700">
+                    <li className="flex gap-3"><span>✅</span><span>Dikelola oleh Pengurus RESAM secara terstruktur.</span></li>
+                    <li className="flex gap-3"><span>✅</span><span>Dimanfaatkan untuk kegiatan kebersamaan dan sosial.</span></li>
+                    <li className="flex gap-3"><span>✅</span><span>Melibatkan seluruh pegawai termasuk pegawai outsourcing dalam pemanfaatannya.</span></li>
+                  </ul>
+                </div>
+                <div className="rounded-3xl bg-gradient-to-br from-sky-700 to-blue-900 text-white shadow-xl p-8">
+                  <h3 className="text-2xl font-bold">Alur Pengelolaan Singkat</h3>
+                  <div className="mt-6 space-y-4">
+                    {[
+                      'Penghimpunan iuran pegawai sesuai rate yang telah disepakati.',
+                      'Pencatatan transaksi pemasukan dan pengeluaran pada spreadsheet aktif.',
+                      'Pemanfaatan dana untuk kegiatan kebersamaan, sosial, dan kebutuhan pendukung kegiatan pegawai.',
+                      'Publikasi data dan dokumentasi kegiatan agar dapat dipantau bersama.'
+                    ].map((item, idx) => (
+                      <div key={idx} className="rounded-2xl bg-white/10 border border-white/20 p-4 flex gap-4">
+                        <div className="h-8 w-8 rounded-full bg-white text-sky-700 font-bold flex items-center justify-center shrink-0">{idx+1}</div>
+                        <div className="leading-7">{item}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="dokumentasi" className="py-20 bg-slate-900 text-white">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <SectionTitle eyebrow="Galeri" title="Dokumentasi Kegiatan RESAM & DANSOS" desc="Folder dokumentasi publik dapat ditampilkan langsung melalui Google Drive untuk memudahkan penelusuran foto, poster, atau arsip kegiatan." />
+              <div className="rounded-3xl overflow-hidden border border-white/10 shadow-2xl bg-slate-800">
+                <div className="p-4 border-b border-white/10 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold">Folder Dokumentasi</div>
+                    <div className="text-sm text-slate-300">Tampilan embed Google Drive</div>
+                  </div>
+                  <a href={DRIVE_FOLDER_URL} target="_blank" className="rounded-xl bg-rose-500 hover:bg-rose-600 px-4 py-2 font-semibold text-white">Buka Semua Dokumentasi</a>
+                </div>
+                <iframe title="Dokumentasi RESAM" src={DRIVE_EMBED_URL} className="w-full h-[520px] bg-white"></iframe>
+              </div>
+            </div>
+          </section>
+
+          <section id="keuangan" className="py-20 bg-slate-100">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <SectionTitle eyebrow="Data & Statistik" title="Pengelolaan Dana RESAM dan DANSOS" desc="Menampilkan ringkasan keuangan berdasarkan data spreadsheet aktif, termasuk statistik pemasukan, pengeluaran, saldo, tabel transaksi, dan komposisi pengeluaran." />
+
+              {error && <div className="mb-8 rounded-2xl border border-amber-300 bg-amber-50 text-amber-800 px-5 py-4">{error}</div>}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                <StatCard title="Total Pemasukan" value={currency(stats.totalPemasukan)} subtitle="Akumulasi seluruh kredit" icon="💰" accent="from-sky-500 to-blue-600" />
+                <StatCard title="Total Pengeluaran" value={currency(stats.totalPengeluaran)} subtitle="Akumulasi seluruh debit" icon="📤" accent="from-rose-500 to-pink-600" />
+                <StatCard title="Saldo Akhir" value={currency(stats.saldoAkhir)} subtitle="Saldo terakhir tercatat" icon="✅" accent="from-emerald-500 to-green-600" />
+                <StatCard title="Dana Sosial Terdeteksi" value={currency(stats.danaSosial)} subtitle="Berdasarkan transaksi terkait dansos" icon="🤲" accent="from-amber-500 to-orange-500" />
+              </div>
+
+              <div className="mt-8 grid lg:grid-cols-2 gap-6">
+                <div className="rounded-3xl bg-white border border-slate-200 p-6 shadow-sm">
+                  <div className="flex items-center justify-between gap-4 mb-4">
+                    <div>
+                      <h3 className="text-xl font-bold">Perkembangan Saldo</h3>
+                      <p className="text-sm text-slate-500">Rekap saldo berdasarkan bulan pencatatan</p>
+                    </div>
+                  </div>
+                  {monthlySeries.length ? <LineChart labels={monthlySeries.map(x => x.label)} data={monthlySeries.map(x => x.saldo)} /> : <div className="text-slate-500">Belum ada data.</div>}
+                </div>
+
+                <div className="rounded-3xl bg-white border border-slate-200 p-6 shadow-sm">
+                  <div className="mb-4">
+                    <h3 className="text-xl font-bold">Komposisi Pengeluaran</h3>
+                    <p className="text-sm text-slate-500">Klasifikasi otomatis berdasarkan uraian transaksi</p>
+                  </div>
+                  {Object.keys(expenseByCategory).length ? <DoughnutChart labels={Object.keys(expenseByCategory)} data={Object.values(expenseByCategory)} /> : <div className="text-slate-500">Belum ada data.</div>}
+                </div>
+              </div>
+
+              <div className="mt-8 grid lg:grid-cols-2 gap-6">
+                <div className="rounded-3xl bg-white border border-slate-200 p-6 shadow-sm">
+                  <h3 className="text-xl font-bold">Highlight Kegiatan & Pengeluaran Besar</h3>
+                  <div className="mt-5 space-y-3">
+                    {highlights.map((item, idx) => (
+                      <div key={idx} className="rounded-2xl border border-slate-100 bg-slate-50 p-4 flex items-start justify-between gap-4">
+                        <div>
+                          <div className="font-semibold text-slate-800">{item.uraian || item.rincian || 'Transaksi'}</div>
+                          <div className="text-sm text-slate-500 mt-1">{item.tanggal.toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' })}</div>
+                        </div>
+                        <div className="font-bold text-rose-600 whitespace-nowrap">{currency(item.debit)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-3xl bg-white border border-slate-200 p-6 shadow-sm">
+                  <h3 className="text-xl font-bold">Ringkasan Operasional</h3>
+                  <div className="mt-5 grid sm:grid-cols-2 gap-4">
+                    <div className="rounded-2xl bg-slate-50 p-4 border border-slate-200">
+                      <div className="text-sm text-slate-500">Jumlah Transaksi</div>
+                      <div className="mt-2 text-3xl font-bold">{stats.totalTransaksi}</div>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 p-4 border border-slate-200">
+                      <div className="text-sm text-slate-500">Periode Data</div>
+                      <div className="mt-2 text-lg font-bold">{rows.length ? `${rows[0].tanggal.getFullYear()} - ${rows[rows.length-1].tanggal.getFullYear()}` : '-'}</div>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 p-4 border border-slate-200 sm:col-span-2">
+                      <div className="text-sm text-slate-500">Transaksi Terakhir</div>
+                      <div className="mt-2 font-bold">{stats.latest ? (stats.latest.uraian || stats.latest.rincian || 'Transaksi') : '-'}</div>
+                      <div className="text-sm text-slate-500 mt-1">{stats.latest ? stats.latest.tanggal.toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' }) : '-'}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-8 rounded-3xl bg-white border border-slate-200 p-6 shadow-sm">
+                <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-5">
+                  <div>
+                    <h3 className="text-xl font-bold">Tabel Data Transaksi</h3>
+                    <p className="text-sm text-slate-500">Pencarian cepat berdasarkan kata kunci dan filter tahun.</p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cari uraian, rincian, atau tanggal..." className="rounded-xl border border-slate-300 px-4 py-3 w-full sm:w-72 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200" />
+                    <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200">
+                      <option value="all">Semua Tahun</option>
+                      {years.map(y => <option key={y} value={String(y)}>{y}</option>)}
+                    </select>
+                    <a href={CSV_URL} target="_blank" className="rounded-xl bg-sky-600 hover:bg-sky-700 text-white px-4 py-3 text-center font-semibold shadow transition">Unduh CSV</a>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="text-sm text-slate-600 font-medium">
+                    Menampilkan {filteredRows.length} dari {rows.length} transaksi
+                    {yearFilter !== 'all' && ` • Tahun ${yearFilter}`}
+                  </div>
+                  <div className="overflow-auto rounded-2xl border border-slate-200 shadow">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-gradient-to-r from-slate-600 to-slate-700 text-white sticky top-0">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-semibold w-12">#</th>
+                          <th className="px-4 py-3 text-left font-semibold">Tanggal</th>
+                          <th className="px-4 py-3 text-left font-semibold">Uraian</th>
+                          <th className="px-4 py-3 text-left font-semibold">Rincian</th>
+                          <th className="px-4 py-3 text-right font-semibold">Kredit</th>
+                          <th className="px-4 py-3 text-right font-semibold">Debit</th>
+                          <th className="px-4 py-3 text-right font-semibold">Saldo</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {loading ? (
+                          <tr><td colSpan="7" className="px-4 py-8 text-center text-slate-500">Memuat data...</td></tr>
+                        ) : filteredRows.length ? (
+                          filteredRows.map((r, idx) => (
+                            <tr key={idx} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition`}>
+                              <td className="px-4 py-3 text-slate-500 font-medium text-center w-12">{idx + 1}</td>
+                              <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-900">{r.tanggal.toLocaleDateString('id-ID')}</td>
+                              <td className="px-4 py-3 font-semibold text-slate-800">{r.uraian || '—'}</td>
+                              <td className="px-4 py-3 text-slate-600">{r.rincian || '—'}</td>
+                              <td className="px-4 py-3 text-right whitespace-nowrap font-semibold text-emerald-700">{r.kredit ? currency(r.kredit) : '—'}</td>
+                              <td className="px-4 py-3 text-right whitespace-nowrap font-semibold text-rose-700">{r.debit ? currency(r.debit) : '—'}</td>
+                              <td className="px-4 py-3 text-right whitespace-nowrap font-bold text-slate-900 bg-slate-100">{r.saldo ? currency(r.saldo) : '—'}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr><td colSpan="7" className="px-4 py-8 text-center text-slate-500">Data tidak ditemukan untuk filter yang dipilih.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="py-20 bg-white">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <SectionTitle eyebrow="Ketentuan" title="Rate Dana Sosial & Iuran RESAM" desc="Kesepakatan resmi pengelolaan dana sosial dan iuran RESAM berdasarkan keputusan per tanggal 2 April 2026." />
+              
+              <div className="grid lg:grid-cols-2 gap-8 mb-12">
+                {/* Rate Dana Sosial */}
+                <div className="rounded-3xl bg-slate-50 border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-6 py-4">
+                    <h3 className="text-xl font-bold">Rate Dana Sosial</h3>
+                    <p className="text-sm text-amber-50">Kesepakatan 2 April 2026</p>
+                  </div>
+                  <div className="overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-100">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-semibold text-slate-700">Kategori</th>
+                          <th className="px-4 py-3 text-right font-semibold text-slate-700">Nominal</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        <tr className="hover:bg-slate-100"><td colSpan="2" className="px-4 py-3 font-bold text-amber-700 text-base">PERNIKAHAN</td></tr>
+                        <tr><td className="px-4 py-3">Menikah (pegawai/anak pegawai)</td><td className="px-4 py-3 text-right font-semibold">Rp 1,000,000</td></tr>
+                        <tr className="text-xs text-slate-500"><td colSpan="2" className="px-3 py-2 italic">* Jika satu kantor maka dapat dua-duanya</td></tr>
+                        
+                        <tr className="hover:bg-slate-100"><td colSpan="2" className="px-4 py-3 font-bold text-amber-700 text-base">SAKIT</td></tr>
+                        <tr><td className="px-4 py-3">Opname intensif/ICU/operasi/sakit serius</td><td className="px-4 py-3 text-right font-semibold">Rp 1,500,000</td></tr>
+                        <tr><td className="px-4 py-3">Rawat inap ≥2 malam (keluarga inti)</td><td className="px-4 py-3 text-right font-semibold">Rp 750,000</td></tr>
+                        <tr><td className="px-4 py-3">Rawat inap &lt;2 malam (keluarga inti)</td><td className="px-4 py-3 text-right font-semibold">Rp 400,000</td></tr>
+                        <tr><td className="px-4 py-3">Rawat di rumah ≥5 hari kerja (pegawai)</td><td className="px-4 py-3 text-right font-semibold">Rp 600,000</td></tr>
+                        <tr><td className="px-4 py-3">Kecelakaan parah membutuhkan perawatan</td><td className="px-4 py-3 text-right font-semibold">Rp 750,000</td></tr>
+                        <tr><td className="px-4 py-3">Melahirkan (pegawai/pasangan)</td><td className="px-4 py-3 text-right font-semibold">Rp 750,000</td></tr>
+                        <tr className="text-xs text-slate-500"><td colSpan="2" className="px-3 py-2 italic">* Bantuan berulang setelah 6 bulan perawatan berkelanjutan</td></tr>
+                        
+                        <tr className="hover:bg-slate-100"><td colSpan="2" className="px-4 py-3 font-bold text-amber-700 text-base">MENINGGAL</td></tr>
+                        <tr><td className="px-4 py-3">Keluarga inti (pegawai/pasangan/anak/orang tua/mertua)</td><td className="px-4 py-3 text-right font-semibold">Rp 1,500,000</td></tr>
+                        <tr><td className="px-4 py-3">Orang tua</td><td className="px-4 py-3 text-right font-semibold">Rp 1,000,000</td></tr>
+                        <tr><td className="px-4 py-3">Karangan bunga (di luar Babel - ybs/pasangan/orang tua pimpinan)</td><td className="px-4 py-3 text-right font-semibold">Rp 500,000</td></tr>
+                        
+                        <tr className="hover:bg-slate-100"><td colSpan="2" className="px-4 py-3 font-bold text-amber-700 text-base">PINDAH/MUTASI</td></tr>
+                        <tr><td className="px-4 py-3">Mutasi keluar provinsi</td><td className="px-4 py-3 text-right font-semibold">Rp 2,000,000</td></tr>
+                        <tr><td className="px-4 py-3">Mutasi dalam provinsi</td><td className="px-4 py-3 text-right font-semibold">Rp 500,000</td></tr>
+                        <tr><td className="px-4 py-3">Purnabakti (pegawai)</td><td className="px-4 py-3 text-right font-semibold">Rp 2,000,000</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Iuran RESAM per Grade */}
+                <div className="rounded-3xl bg-slate-50 border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="bg-gradient-to-r from-sky-500 to-blue-600 text-white px-6 py-4">
+                    <h3 className="text-xl font-bold">Iuran RESAM per Grade</h3>
+                    <p className="text-sm text-sky-50">Kesepakatan 2 April 2026</p>
+                  </div>
+                  <div className="overflow-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-100">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-semibold text-slate-700">Grade</th>
+                          <th className="px-4 py-3 text-right font-semibold text-slate-700">Iuran/Bulan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {[
+                          ['Grade 15', 'Rp 300,000'],
+                          ['Grade 12', 'Rp 150,000'],
+                          ['Grade 11', 'Rp 135,000'],
+                          ['Grade 10', 'Rp 85,000'],
+                          ['Grade 9', 'Rp 65,000'],
+                          ['Grade 8', 'Rp 55,000'],
+                          ['Grade 7', 'Rp 45,000'],
+                          ['Grade 6', 'Rp 40,000'],
+                          ['Grade 5', 'Rp 30,000'],
+                          ['Grade 4', 'Rp 30,000'],
+                          ['Grade 3', 'Rp 30,000'],
+                          ['Grade 2', 'Rp 25,000'],
+                          ['Grade 1', 'Rp 25,000'],
+                        ].map(([grade, iuran]) => (
+                          <tr key={grade} className="hover:bg-blue-50">
+                            <td className="px-4 py-3 font-medium text-slate-700">{grade}</td>
+                            <td className="px-4 py-3 text-right font-semibold text-sky-700">{iuran}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* Kegiatan yang dapat dibiayai */}
+              <div className="rounded-3xl bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 shadow-sm p-8">
+                <h3 className="text-2xl font-bold text-emerald-900">Pembiayaan Kegiatan Kebersamaan</h3>
+                <p className="mt-2 text-emerald-700">Kegiatan berikut dapat dibiayai oleh dana RESAM:</p>
+                <div className="mt-6 grid sm:grid-cols-2 gap-4">
+                  {[
+                    'Seragam (Sehat Bersih Jaga Bersama) / Senam Bersama',
+                    'Bedulang',
+                    'Jumat Bersih',
+                    'Hari Statistik Nasional (HSN)',
+                    'Peringatan 17 Agustus',
+                    'Dan kegiatan lain dalam program Manajemen Perubahan/CAN'
+                  ].map((item, idx) => (
+                    <div key={idx} className="flex gap-3">
+                      <div className="text-emerald-600 font-bold">✓</div>
+                      <div className="text-emerald-900">{item}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="py-20 bg-gradient-to-r from-sky-700 to-blue-900 text-white">
+            <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+              <h2 className="text-4xl font-black">Butuh Informasi Lebih Lanjut?</h2>
+              <p className="mt-4 text-sky-100 text-lg leading-8">Sistem ini dapat dikembangkan lebih lanjut dengan fitur login pengurus, input transaksi, ekspor laporan, rekap iuran per grade, serta manajemen dokumentasi kegiatan.</p>
+              <div className="mt-8 flex flex-wrap justify-center gap-4">
+                <a href={DRIVE_FOLDER_URL} target="_blank" className="rounded-2xl bg-rose-500 hover:bg-rose-600 px-6 py-3 font-semibold">Buka Dokumentasi</a>
+                <a href={CSV_URL} target="_blank" className="rounded-2xl bg-white text-sky-800 hover:bg-sky-50 px-6 py-3 font-semibold">Lihat Data Sumber</a>
+              </div>
+            </div>
+          </section>
+
+          <footer className="bg-slate-950 text-slate-300 py-12">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid md:grid-cols-4 gap-8">
+              <div>
+                <div className="flex items-center gap-2">
+                  <img src="logo.png" alt="RESAM Logo" className="h-8 w-8 rounded object-contain" />
+                  <div className="text-white font-bold text-xl">RESAM</div>
+                </div>
+                <p className="mt-3 text-sm leading-7">Platform digital transparansi RESAM untuk BPS Provinsi Kepulauan Bangka Belitung.</p>
+              </div>
+              <div>
+                <div className="text-white font-semibold">Menu</div>
+                <ul className="mt-3 space-y-2 text-sm">
+                  <li><a href="#beranda">Beranda</a></li>
+                  <li><a href="#tentang">Tentang</a></li>
+                  <li><a href="#keuangan">Data</a></li>
+                  <li><a href="#dokumentasi">Galeri</a></li>
+                </ul>
+              </div>
+              <div>
+                <div className="text-white font-semibold">Data Sumber</div>
+                <ul className="mt-3 space-y-2 text-sm break-all">
+                  <li><a href={CSV_URL} target="_blank">Google Sheets RESAM</a></li>
+                  <li><a href={DRIVE_FOLDER_URL} target="_blank">Google Drive Dokumentasi</a></li>
+                </ul>
+              </div>
+              <div>
+                <div className="text-white font-semibold">Catatan</div>
+                <p className="mt-3 text-sm leading-7">Untuk lingkungan produksi internal, sumber data sebaiknya dihubungkan melalui API atau Apps Script agar kontrol akses dan validasi data lebih stabil.</p>
+              </div>
+            </div>
+            <div className="mt-10 text-center text-xs text-slate-500">© 2026 Sistem RESAM - dibuat dengan HTML, React, Tailwind, dan Chart.js</div>
+          </footer>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
