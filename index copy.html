@@ -639,24 +639,178 @@
           <section id="tentang" className="py-20 bg-slate-50 border-y border-slate-200">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
               <SectionTitle eyebrow="Tentang" title="Sejarah Singkat RESAM" desc="Inisiatif kebersamaan internal yang dikelola untuk mendukung kegiatan sosial dan kebersamaan di lingkungan BPS Provinsi Kepulauan Bangka Belitung." />
-              <div className="rounded-3xl bg-white border border-slate-200 shadow-sm p-8">
-                <div className="inline-flex rounded-full bg-sky-100 text-sky-700 px-4 py-2 text-sm font-semibold">Definisi RESAM</div>
-                <p className="mt-5 text-slate-700 leading-8">{resamDefinition}</p>
-                <ul className="mt-6 space-y-3 text-slate-700">
-                  <li className="flex gap-3"><span>✅</span><span>Dikelola oleh Pengurus RESAM secara terstruktur.</span></li>
-                  <li className="flex gap-3"><span>✅</span><span>Dimanfaatkan untuk kegiatan kebersamaan dan sosial.</span></li>
-                  <li className="flex gap-3"><span>✅</span><span>Melibatkan seluruh pegawai termasuk pegawai outsourcing dalam pemanfaatannya.</span></li>
-                </ul>
+              <div className="grid lg:grid-cols-2 gap-8 items-start">
+                <div className="rounded-3xl bg-white border border-slate-200 shadow-sm p-8">
+                  <div className="inline-flex rounded-full bg-sky-100 text-sky-700 px-4 py-2 text-sm font-semibold">Definisi RESAM</div>
+                  <p className="mt-5 text-slate-700 leading-8">{resamDefinition}</p>
+                  <ul className="mt-6 space-y-3 text-slate-700">
+                    <li className="flex gap-3"><span>✅</span><span>Dikelola oleh Pengurus RESAM secara terstruktur.</span></li>
+                    <li className="flex gap-3"><span>✅</span><span>Dimanfaatkan untuk kegiatan kebersamaan dan sosial.</span></li>
+                    <li className="flex gap-3"><span>✅</span><span>Melibatkan seluruh pegawai termasuk pegawai outsourcing dalam pemanfaatannya.</span></li>
+                  </ul>
+                </div>
+                <div className="rounded-3xl bg-gradient-to-br from-sky-700 to-blue-900 text-white shadow-xl p-8">
+                  <h3 className="text-2xl font-bold">Alur Pengelolaan Singkat</h3>
+                  <div className="mt-6 space-y-4">
+                    {[
+                      'Penghimpunan iuran pegawai sesuai rate yang telah disepakati.',
+                      'Pencatatan transaksi pemasukan dan pengeluaran pada spreadsheet aktif.',
+                      'Pemanfaatan dana untuk kegiatan kebersamaan, sosial, dan kebutuhan pendukung kegiatan pegawai.',
+                      'Publikasi data dan dokumentasi kegiatan agar dapat dipantau bersama.'
+                    ].map((item, idx) => (
+                      <div key={idx} className="rounded-2xl bg-white/10 border border-white/20 p-4 flex gap-4">
+                        <div className="h-8 w-8 rounded-full bg-white text-sky-700 font-bold flex items-center justify-center shrink-0">{idx+1}</div>
+                        <div className="leading-7">{item}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </section>
 
           <section id="dokumentasi" className="py-12 sm:py-16 lg:py-20 bg-slate-900 text-white">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-              <SectionTitle eyebrow="Galeri" title="Dokumentasi Kegiatan RESAM & DANSOS" desc="Tampilan lengkap folder dokumentasi dari Google Drive." />
+              <SectionTitle eyebrow="Galeri" title="Dokumentasi Kegiatan RESAM & DANSOS" desc="Pilih tahun untuk melihat dokumentasi kegiatan. Galeri mengambil foto otomatis dari folder Google Drive berdasarkan tahun yang dipilih." />
+
+              <div className="rounded-3xl border border-white/10 bg-slate-800/90 shadow-2xl overflow-hidden">
+                {/* Year Selection Panel */}
+                <div className="p-4 sm:p-6 border-b border-white/10 bg-slate-900/50">
+                  <div className="mb-4">
+                    <h3 className="text-lg sm:text-xl font-bold mb-3">📅 Pilih Tahun Dokumentasi</h3>
+                    <div className="flex flex-wrap gap-2 sm:gap-3">
+                      <button
+                        onClick={() => setSelectedGalleryYear('all')}
+                        className={`rounded-full px-3 sm:px-4 py-2 text-sm font-semibold transition ${
+                          selectedGalleryYear === 'all'
+                            ? 'bg-sky-500 border-sky-400 text-white'
+                            : 'bg-white/10 border border-white/20 text-slate-200 hover:bg-white/20'
+                        }`}
+                      >
+                        Semua Tahun
+                      </button>
+                      {galleryYears.map(year => (
+                        <button
+                          key={year}
+                          onClick={() => setSelectedGalleryYear(String(year))}
+                          className={`rounded-full px-3 sm:px-4 py-2 text-sm font-semibold transition ${
+                            selectedGalleryYear === String(year)
+                              ? 'bg-sky-500 border-sky-400 text-white'
+                              : 'bg-white/10 border border-white/20 text-slate-200 hover:bg-white/20'
+                          }`}
+                        >
+                          {year}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-xs sm:text-sm text-slate-300 mt-3">💡 Pilih tahun di atas untuk memuat dan menampilkan foto dari tahun tersebut</p>
+                </div>
+
+                {/* Gallery Display */}
+                <div className="p-4 sm:p-6">
+                  {galleryError && (
+                    <div className="mb-5 rounded-2xl border border-amber-400/40 bg-amber-400/10 text-amber-100 px-4 sm:px-5 py-3 sm:py-4 text-sm">
+                      ⚠️ {galleryError}
+                    </div>
+                  )}
+
+                  {galleryLoading || (selectedGalleryYear && !galleryPhotosLoaded[selectedGalleryYear]) ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                      {[1,2,3,4].map(i => (
+                        <div key={i} className="h-40 sm:h-48 lg:h-56 rounded-2xl sm:rounded-3xl bg-white/5 animate-pulse border border-white/10"></div>
+                      ))}
+                    </div>
+                  ) : visibleGalleryPhotos.length ? (
+                    <>
+                      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                        {visibleGalleryPhotos.map((photo, idx) => (
+                          <a
+                            key={`${photo.id}-${idx}`}
+                            href={photo.webViewLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="group relative overflow-hidden rounded-2xl sm:rounded-3xl border border-white/10 bg-slate-950 shadow-lg h-40 sm:h-48 lg:h-56 hover:shadow-xl transition"
+                          >
+                            <img
+                              src={photo.thumb || photo.url}
+                              alt={photo.name}
+                              className="h-full w-full object-cover transition duration-500 group-hover:scale-110"
+                              loading="lazy"
+                              onError={(e) => { e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 400 300%22%3E%3Crect fill=%22%23374151%22 width=%22400%22 height=%22300%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-family=%22Arial%22 font-size=%2220%22 fill=%22%239CA3AF%22%3EFoto tidak dapat dimuat%3C/text%3E%3C/svg%3E'; }}
+                            />
+                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/50 to-transparent p-3 sm:p-4">
+                              <div className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-sky-300 font-semibold">{photo.year}</div>
+                              <div className="mt-1 font-semibold text-xs sm:text-sm line-clamp-2">{photo.name}</div>
+                              <div className="mt-0.5 text-[10px] sm:text-xs text-slate-400 line-clamp-1">{photo.folderPath}</div>
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+
+                      <div className="mt-5 sm:mt-6 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 text-sm text-slate-300">
+                        <div className="text-xs sm:text-sm">
+                          <span className="font-semibold">{visibleGalleryPhotos.length}</span> foto ditampilkan
+                          {selectedGalleryYear && selectedGalleryYear !== 'all' ? (
+                            <> dari <span className="font-semibold">{filteredGalleryPhotos.length}</span> foto tahun <span className="font-semibold">{selectedGalleryYear}</span></>
+                          ) : (
+                            <> dari total <span className="font-semibold">{filteredGalleryPhotos.length}</span> foto</>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setGalleryIndex(prev => filteredGalleryPhotos.length ? (prev - 1 + filteredGalleryPhotos.length) % filteredGalleryPhotos.length : 0)}
+                            disabled={filteredGalleryPhotos.length <= 1}
+                            className="rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed px-3 sm:px-4 py-2 font-semibold text-sm transition"
+                          >
+                            ← Sebelumnya
+                          </button>
+                          <div className="text-xs sm:text-sm font-semibold bg-white/10 rounded-lg px-3 py-2 whitespace-nowrap">
+                            {filteredGalleryPhotos.length > 0 ? `${galleryIndex + 1} / ${filteredGalleryPhotos.length}` : '0 / 0'}
+                          </div>
+                          <button
+                            onClick={() => setGalleryIndex(prev => filteredGalleryPhotos.length ? (prev + 1) % filteredGalleryPhotos.length : 0)}
+                            disabled={filteredGalleryPhotos.length <= 1}
+                            className="rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed px-3 sm:px-4 py-2 font-semibold text-sm transition"
+                          >
+                            Selanjutnya →
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  ) : selectedGalleryYear ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 sm:px-6 py-8 sm:py-10 text-center">
+                      <div className="text-slate-400 text-sm sm:text-base">Belum ada foto yang ditemukan untuk tahun yang dipilih.</div>
+                      <button
+                        onClick={() => setSelectedGalleryYear('all')}
+                        className="mt-4 rounded-lg bg-sky-500 hover:bg-sky-600 px-4 py-2 font-semibold text-sm transition"
+                      >
+                        Lihat Semua Tahun
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 px-4 sm:px-6 py-8 sm:py-10 text-center">
+                      <div className="text-slate-400 text-sm sm:text-base">👆 Pilih tahun di atas untuk melihat dokumentasi kegiatan</div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Drive Folder Link */}
+                <div className="border-t border-white/10 p-4 sm:p-6 bg-slate-950/50">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div>
+                      <div className="font-semibold text-sm sm:text-base">📂 Explorer Folder Dokumentasi</div>
+                      <div className="text-xs sm:text-sm text-slate-400 mt-1">Lihat semua isi folder di Google Drive</div>
+                    </div>
+                    <a href={DRIVE_FOLDER_URL} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-rose-500 hover:bg-rose-600 px-4 py-2.5 font-semibold text-white text-sm transition whitespace-nowrap">
+                      ➜ Buka di Drive
+                    </a>
+                  </div>
+                </div>
+              </div>
 
               {/* Embedded Drive Viewer */}
-              <div className="rounded-3xl overflow-hidden border border-white/10 shadow-2xl bg-slate-800">
+              <div className="mt-6 sm:mt-8 rounded-3xl overflow-hidden border border-white/10 shadow-2xl bg-slate-800 hidden sm:block">
                 <div className="p-4 sm:p-6 border-b border-white/10 bg-slate-900/50">
                   <div className="font-semibold text-sm sm:text-base">📋 Grid View - Semua Dokumentasi</div>
                   <div className="text-xs sm:text-sm text-slate-400 mt-1">Tampilan lengkap folder dokumentasi dari Google Drive</div>
@@ -665,8 +819,6 @@
               </div>
             </div>
           </section>
-
-
 
           <section id="keuangan" className="py-12 sm:py-16 lg:py-20 bg-slate-100">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
