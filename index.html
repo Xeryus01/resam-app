@@ -390,11 +390,38 @@
 
       const getCategoryForResam = (uraian, rincian) => {
         const text = `${uraian} ${rincian}`.toLowerCase();
-        if (text.includes('konsumsi') || text.includes('makan') || text.includes('snack') || text.includes('minuman') || text.includes('air mineral') || text.includes('kopi') || text.includes('teh')) return 'Konsumsi';
-        if (text.includes('kegiatan') || text.includes('hut') || text.includes('bedulang') || text.includes('hsn') || text.includes('senam') || text.includes('jumat bersih') || text.includes('17 agustus')) return 'Kegiatan';
-        if (text.includes('perlengkapan') || text.includes('spanduk') || text.includes('gelas') || text.includes('plastik') || text.includes('banner')) return 'Perlengkapan';
-        if (text.includes('kesehatan') || text.includes('sehat')) return 'Kesehatan';
-        return uraian || 'Lainnya';
+        
+        // Konsumsi - makanan, minuman, snack
+        if (text.includes('konsumsi') || text.includes('makan') || text.includes('snack') || text.includes('minuman') || 
+            text.includes('air mineral') || text.includes('kopi') || text.includes('teh') || text.includes('makanan') ||
+            text.includes('pesan') || text.includes('pesanan') || text.includes('beli') || text.includes('belanja')) {
+          return 'Konsumsi';
+        }
+        
+        // Kegiatan - acara dan kegiatan kebersamaan
+        if (text.includes('kegiatan') || text.includes('bedulang') || text.includes('hsn') || text.includes('senam') || 
+            text.includes('jumat bersih') || text.includes('17 agustus') || text.includes('hut') || text.includes('acara') ||
+            text.includes('upacara') || text.includes('gathering') || text.includes('olahraga') || text.includes('games') ||
+            text.includes('hadiah') || text.includes('piala') || text.includes('trophy')) {
+          return 'Kegiatan';
+        }
+        
+        // Perlengkapan - barang, supplies, equipment
+        if (text.includes('perlengkapan') || text.includes('spanduk') || text.includes('gelas') || text.includes('plastik') || 
+            text.includes('banner') || text.includes('barang') || text.includes('supplies') || text.includes('peralatan') ||
+            text.includes('pita') || text.includes('bendera') || text.includes('kertas') || text.includes('sticker') ||
+            text.includes('papan') || text.includes('dekorasi') || text.includes('tenda') || text.includes('sound')) {
+          return 'Perlengkapan';
+        }
+        
+        // Operasional - transportasi, jasa, dll
+        if (text.includes('transport') || text.includes('bensin') || text.includes('jasa') || text.includes('operasional') ||
+            text.includes('biaya') || text.includes('akomodasi') || text.includes('hotel') || text.includes('ticket') ||
+            text.includes('dokumentasi') || text.includes('foto') || text.includes('video')) {
+          return 'Operasional';
+        }
+        
+        return 'Lainnya';
       };
 
       const getCategoryForDansos = (uraian) => {
