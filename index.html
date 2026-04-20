@@ -556,12 +556,12 @@
 
               {error && <div className="mb-4 sm:mb-5 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm">{error}</div>}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+              {/*<div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
                 <StatCard title="Total Pemasukan" value={currency(stats.totalPemasukan)} subtitle={`Tahun ${yearFilter || 'ini'}`} icon="💰" accent="from-sky-500 to-blue-600" />
                 <StatCard title="Total Pengeluaran" value={currency(stats.totalPengeluaran)} subtitle={`Tahun ${yearFilter || 'ini'}`} icon="📤" accent="from-rose-500 to-pink-600" />
                 <StatCard title="Saldo Akhir" value={currency(stats.saldoAkhir)} subtitle="Saldo terkini" icon="✅" accent="from-emerald-500 to-green-600" />
                 <StatCard title="Total Transaksi" value={stats.totalTransaksi} subtitle={`Tahun ${yearFilter || 'ini'}`} icon="📊" accent="from-amber-500 to-orange-500" />
-              </div>
+              </div>*/}
 
               <div className="mt-4 sm:mt-5 grid lg:grid-cols-2 gap-3 sm:gap-4">
                 <div className="rounded-2xl bg-white border border-slate-200 p-3 sm:p-5 shadow-sm min-h-[300px]">
@@ -716,54 +716,95 @@
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
               <SectionTitle eyebrow="Rate" title="Rate Kontribusi dan Pembiayaan" desc="Informasi lengkap rate kontribusi pegawai dan kegiatan yang dapat dibiayai oleh RESAM dan DANSOS." />
               
-              <div className="space-y-6 sm:space-y-8">
-                {/* RESAM Section */}
-                <div className="rounded-2xl bg-gradient-to-br from-sky-50 to-blue-50 border border-sky-200 shadow-sm p-4 sm:p-6">
-                  <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-3">Kegiatan yang Dibiayai RESAM</h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 mb-5">
-                    <div className="rounded-lg bg-white border border-sky-200 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700">👕 Seragam/Senam</div>
-                    <div className="rounded-lg bg-white border border-sky-200 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700">🏃 Bedulang</div>
-                    <div className="rounded-lg bg-white border border-sky-200 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700">🧹 Jumat Bersih</div>
-                    <div className="rounded-lg bg-white border border-sky-200 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700">📊 HSN</div>
-                    <div className="rounded-lg bg-white border border-sky-200 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700">🇮🇩 17 Agustus</div>
-                    <div className="rounded-lg bg-white border border-sky-200 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700">🎯 CAN</div>
+              <div className="grid gap-6 lg:grid-cols-2">
+                <div className="rounded-3xl bg-sky-50 border border-sky-200 p-5 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900">RESAM</h3>
+                      <p className="mt-1 text-sm text-slate-600">Pembiayaan kegiatan kebersamaan yang dapat dibiayai oleh RESAM.</p>
+                    </div>
+                    <span className="inline-flex items-center rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700">Kesepakatan 2 April 2026</span>
                   </div>
-                  
-                  <h4 className="text-sm font-bold text-slate-900 mb-2">Iuran RESAM Berdasarkan Grade</h4>
-                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-1.5 sm:gap-2">
-                    <div className="rounded bg-sky-600 text-white text-center px-2 py-1.5 text-xs font-bold">Grade</div>
-                    <div className="rounded bg-sky-600 text-white text-center px-2 py-1.5 text-xs font-bold">Rp</div>
-                    <div className="rounded bg-sky-600 text-white text-center px-2 py-1.5 text-xs font-bold">15</div>
-                    <div className="rounded bg-sky-600 text-white text-center px-2 py-1.5 text-xs font-bold">300K</div>
-                    <div className="rounded bg-sky-600 text-white text-center px-2 py-1.5 text-xs font-bold">12</div>
-                    <div className="rounded bg-sky-600 text-white text-center px-2 py-1.5 text-xs font-bold">150K</div>
-                    
-                    {[{g:'11',r:'135K'}, {g:'10',r:'85K'}, {g:'9',r:'65K'}, {g:'8',r:'55K'}, {g:'7',r:'45K'}, {g:'6',r:'40K'}, {g:'5',r:'30K'}, {g:'4',r:'30K'}, {g:'3',r:'30K'}, {g:'2',r:'25K'}, {g:'1',r:'25K'}].map((item, idx) => (
-                      <React.Fragment key={idx}>
-                        <div className="rounded bg-slate-50 border border-sky-100 text-center px-2 py-1.5 text-xs font-medium text-slate-700">{item.g}</div>
-                        <div className="rounded bg-slate-50 border border-sky-100 text-center px-2 py-1.5 text-xs font-bold text-sky-700">{item.r}</div>
-                      </React.Fragment>
-                    ))}
+
+                  <div className="grid gap-2 text-sm text-slate-700 sm:grid-cols-2 mb-4">
+                    <div className="rounded-2xl bg-white border border-slate-200 p-3">a. Seragam (Sehat Bersih Jaga Bersama)/Senam Bersama</div>
+                    <div className="rounded-2xl bg-white border border-slate-200 p-3">b. Bedulang</div>
+                    <div className="rounded-2xl bg-white border border-slate-200 p-3">c. Jumat Bersih</div>
+                    <div className="rounded-2xl bg-white border border-slate-200 p-3">d. Hari Statistik Nasional (HSN)</div>
+                    <div className="rounded-2xl bg-white border border-slate-200 p-3">e. Peringatan 17 Agustus</div>
+                    <div className="rounded-2xl bg-white border border-slate-200 p-3">f. Dan kegiatan lain yang ada dalam program Manajemen Perubahan/CAN</div>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-3xl bg-white border border-slate-200 p-3 shadow-sm">
+                    <div className="grid grid-cols-2 gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 border-b border-slate-200 pb-3">
+                      <div>Grade</div>
+                      <div className="text-right">Nilai</div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-slate-700">
+                      {[
+                        ['15', '300.000'],
+                        ['12', '150.000'],
+                        ['11', '135.000'],
+                        ['10', '85.000'],
+                        ['9', '65.000'],
+                        ['8', '55.000'],
+                        ['7', '45.000'],
+                        ['6', '40.000'],
+                        ['5', '30.000'],
+                        ['4', '30.000'],
+                        ['3', '30.000'],
+                        ['2', '25.000'],
+                        ['1', '25.000'],
+                      ].map(([grade, amount], idx) => (
+                        <React.Fragment key={grade}>
+                          <div className={`rounded-2xl px-3 py-2 ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-slate-100'}`}>{grade}</div>
+                          <div className={`rounded-2xl px-3 py-2 text-right ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-slate-100'}`}>Rp {amount}</div>
+                        </React.Fragment>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                {/* DANSOS Section */}
-                <div className="rounded-2xl bg-gradient-to-br from-rose-50 to-pink-50 border border-rose-200 shadow-sm p-4 sm:p-6">
-                  <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-3">Rate DANSOS Berdasarkan Jenis Kejadian</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 text-xs sm:text-sm">
-                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">💍 Menikah:</span> <span className="text-slate-700 text-xs">1 Juta</span></div>
-                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🏥 Opname Intensif:</span> <span className="text-slate-700 text-xs">1,5 Juta</span></div>
-                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🏥 Rawat Inap 2+ Hari:</span> <span className="text-slate-700 text-xs">750K</span></div>
-                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🏥 Rawat Inap &lt; 2 Hari:</span> <span className="text-slate-700 text-xs">400K</span></div>
-                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🏠 Rawat Rumah 5+ Hari:</span> <span className="text-slate-700 text-xs">600K</span></div>
-                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">👶 Melahirkan:</span> <span className="text-slate-700 text-xs">750K</span></div>
-                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🚗 Kecelakaan Parah:</span> <span className="text-slate-700 text-xs">750K</span></div>
-                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">⚖️ Meninggal (Inti):</span> <span className="text-slate-700 text-xs">1,5 Juta</span></div>
-                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">⚖️ Meninggal (Lain):</span> <span className="text-slate-700 text-xs">1 Juta</span></div>
-                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🌹 Karangan Bunga:</span> <span className="text-slate-700 text-xs">500K</span></div>
-                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🚀 Mutasi Luar Prov:</span> <span className="text-slate-700 text-xs">2 Juta</span></div>
-                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🏢 Mutasi Dalam Prov:</span> <span className="text-slate-700 text-xs">500K</span></div>
-                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🎓 Purnabakti:</span> <span className="text-slate-700 text-xs">2 Juta</span></div>
+                <div className="rounded-3xl bg-rose-50 border border-rose-200 p-5 shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900">DANSOS</h3>
+                      <p className="mt-1 text-sm text-slate-600">Rate untuk kejadian sosial yang didukung DANSOS.</p>
+                    </div>
+                    <span className="inline-flex items-center rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700">Kesepakatan 2 April 2026</span>
+                  </div>
+
+                  <div className="space-y-3 text-sm text-slate-700">
+                    <div className="rounded-2xl bg-white border border-rose-200 p-4">
+                      <div className="font-semibold text-slate-900 mb-2">Menikah</div>
+                      <div className="text-2xl font-semibold text-rose-700">Rp 1.000.000</div>
+                      <div className="mt-2 text-xs text-slate-500">Menikah pegawai / anak pegawai</div>
+                    </div>
+                    <div className="rounded-2xl bg-white border border-rose-200 p-4">
+                      <div className="font-semibold text-slate-900 mb-2">Sakit</div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between"><span className="text-slate-700">Opname intensif / ICU / operasi</span><span className="font-semibold text-rose-700">Rp 1.500.000</span></div>
+                        <div className="flex items-center justify-between"><span className="text-slate-700">Rawat inap keluarga inti ≥ 2 malam</span><span className="font-semibold text-rose-700">Rp 750.000</span></div>
+                        <div className="flex items-center justify-between"><span className="text-slate-700">Rawat inap keluarga inti &lt; 2 malam</span><span className="font-semibold text-rose-700">Rp 400.000</span></div>
+                        <div className="flex items-center justify-between"><span className="text-slate-700">Rawat di rumah minimal 5 hari kerja</span><span className="font-semibold text-rose-700">Rp 600.000</span></div>
+                        <div className="flex items-center justify-between"><span className="text-slate-700">Kecelakaan parah yang perlu perawatan</span><span className="font-semibold text-rose-700">Rp 750.000</span></div>
+                        <div className="flex items-center justify-between"><span className="text-slate-700">Melahirkan (ybs/pasangan)</span><span className="font-semibold text-rose-700">Rp 750.000</span></div>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl bg-white border border-rose-200 p-4">
+                      <div className="font-semibold text-slate-900 mb-2">Meninggal</div>
+                      <div className="flex items-center justify-between"><span className="text-slate-700">Ybs/Pasangan/Anak/Orang tua/Mertua</span><span className="font-semibold text-rose-700">Rp 1.500.000</span></div>
+                      <div className="mt-2 flex items-center justify-between"><span className="text-slate-700">Kategori lainnya</span><span className="font-semibold text-rose-700">Rp 1.000.000</span></div>
+                    </div>
+                    <div className="rounded-2xl bg-white border border-rose-200 p-4">
+                      <div className="font-semibold text-slate-900 mb-2">Lain-lain</div>
+                      <div className="flex items-center justify-between"><span className="text-slate-700">Karangan bunga luar Babel</span><span className="font-semibold text-rose-700">Rp 500.000</span></div>
+                      <div className="mt-3 grid gap-2 text-slate-700 sm:grid-cols-2">
+                        <div className="rounded-2xl bg-rose-50 p-3">Mutasi keluar provinsi: <span className="font-semibold text-rose-700">Rp 2.000.000</span></div>
+                        <div className="rounded-2xl bg-rose-50 p-3">Mutasi dalam provinsi: <span className="font-semibold text-rose-700">Rp 500.000</span></div>
+                      </div>
+                      <div className="mt-3 rounded-2xl bg-rose-50 p-3 text-slate-700">Purnabakti: <span className="font-semibold text-rose-700">Rp 2.000.000</span></div>
+                    </div>
                   </div>
                 </div>
               </div>
