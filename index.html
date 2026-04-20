@@ -358,15 +358,21 @@
       }, [yearFilter, query, activeTab]);
 
       const stats = useMemo(() => {
-        const currentYear = new Date().getFullYear();
-        const currentYearRows = currentRows.filter(r => r.tanggal.getFullYear() === currentYear).sort((a, b) => a.tanggal - b.tanggal);
-        const totalPemasukan = currentYearRows.reduce((s, r) => s + r.kredit, 0);
-        const totalPengeluaran = currentYearRows.reduce((s, r) => s + r.debit, 0);
-        const saldoAkhir = currentYearRows.length ? currentYearRows[currentYearRows.length - 1].saldo : 0;
+        const totalPemasukan = yearFilteredRows.reduce((s, r) => s + r.kredit, 0);
+        const totalPengeluaran = yearFilteredRows.reduce((s, r) => s + r.debit, 0);
+        
+        // For DANSOS: take from the last row (chronologically last)
+        // For RESAM: take from the most recent date
+        let latestRow = yearFilteredRows.length ? yearFilteredRows[0] : null;
+        if (activeTab === 'dansos' && yearFilteredRows.length > 0) {
+          const sorted = [...yearFilteredRows].sort((a, b) => a.tanggal - b.tanggal);
+          latestRow = sorted[sorted.length - 1];
+        }
+        
+        const saldoAkhir = latestRow ? latestRow.saldo : 0;
         const totalTransaksi = yearFilteredRows.length;
-        const latest = currentYearRows.length ? currentYearRows[currentYearRows.length - 1] : yearFilteredRows.length ? yearFilteredRows[yearFilteredRows.length - 1] : null;
-        return { totalPemasukan, totalPengeluaran, saldoAkhir, totalTransaksi, latest };
-      }, [yearFilteredRows, currentRows]);
+        return { totalPemasukan, totalPengeluaran, saldoAkhir, totalTransaksi, latest: latestRow };
+      }, [yearFilteredRows, activeTab]);
 
       const monthlySeries = useMemo(() => {
         const map = new Map();
@@ -382,19 +388,37 @@
         return arr;
       }, [yearFilteredRows]);
 
+      const getCategoryForResam = (uraian, rincian) => {
+        const text = `${uraian} ${rincian}`.toLowerCase();
+        if (text.includes('konsumsi') || text.includes('makan') || text.includes('snack') || text.includes('minuman') || text.includes('air mineral') || text.includes('kopi') || text.includes('teh')) return 'Konsumsi';
+        if (text.includes('kegiatan') || text.includes('hut') || text.includes('bedulang') || text.includes('hsn') || text.includes('senam') || text.includes('jumat bersih') || text.includes('17 agustus')) return 'Kegiatan';
+        if (text.includes('perlengkapan') || text.includes('spanduk') || text.includes('gelas') || text.includes('plastik') || text.includes('banner')) return 'Perlengkapan';
+        if (text.includes('kesehatan') || text.includes('sehat')) return 'Kesehatan';
+        return uraian || 'Lainnya';
+      };
+
+      const getCategoryForDansos = (uraian) => {
+        const text = uraian.toLowerCase();
+        if (text.includes('kesehatan') || text.includes('sakit') || text.includes('opname')) return 'Bantuan Kesehatan';
+        if (text.includes('menikah')) return 'Bantuan Menikah';
+        if (text.includes('meninggal')) return 'Bantuan Meninggal';
+        if (text.includes('melahirkan') || text.includes('bayi')) return 'Bantuan Melahirkan';
+        if (text.includes('donor') || text.includes('darah')) return 'Donor Darah';
+        if (text.includes('mutasi') || text.includes('pindah') || text.includes('purnabakti')) return 'Mutasi/Purnabakti';
+        if (text.includes('pemasukan')) return 'Pemasukan';
+        return uraian || 'Lainnya';
+      };
+
       const expenseByCategory = useMemo(() => {
         const bucket = {};
         yearFilteredRows.filter(r => r.debit > 0).forEach(r => {
-          const text = slug(`${r.uraian} ${r.rincian}`);
-          let category = 'Lainnya';
-          if (text.includes('konsumsi') || text.includes('makan') || text.includes('snack') || text.includes('air mineral') || text.includes('teh') || text.includes('kopi')) category = 'Konsumsi';
-          else if (text.includes('donor darah') || text.includes('dana sosial') || text.includes('dansos')) category = 'Dana Sosial';
-          else if (text.includes('hut') || text.includes('bedulang') || text.includes('hsn') || text.includes('sejati') || text.includes('jumat bersih')) category = 'Kegiatan';
-          else if (text.includes('spanduk') || text.includes('gelas') || text.includes('plastik') || text.includes('paper')) category = 'Perlengkapan';
+          const category = activeTab === 'resam' 
+            ? getCategoryForResam(r.uraian, r.rincian)
+            : getCategoryForDansos(r.uraian);
           bucket[category] = (bucket[category] || 0) + r.debit;
         });
         return bucket;
-      }, [yearFilteredRows]);
+      }, [yearFilteredRows, activeTab]);
 
       const highlights = useMemo(() => {
         return yearFilteredRows
@@ -467,17 +491,17 @@
                   <div className="glass rounded-2xl sm:rounded-3xl p-3 sm:p-5 shadow-lg border border-white/80 min-w-0">
                     <div className="text-xs text-slate-500">Total Pemasukan</div>
                     <div className="mt-1.5 text-lg sm:text-2xl font-bold text-slate-900 whitespace-nowrap">{currency(stats.totalPemasukan)}</div>
-                    <div className="mt-0.5 text-xs text-slate-500">Tahun ini</div>
+                    <div className="mt-0.5 text-xs text-slate-500">Tahun {yearFilter || 'ini'}</div>
                   </div>
                   <div className="glass rounded-2xl sm:rounded-3xl p-3 sm:p-5 shadow-lg border border-white/80 min-w-0">
                     <div className="text-xs text-slate-500">Total Pengeluaran</div>
                     <div className="mt-1.5 text-lg sm:text-2xl font-bold text-slate-900 whitespace-nowrap">{currency(stats.totalPengeluaran)}</div>
-                    <div className="mt-0.5 text-xs text-slate-500">Tahun ini</div>
+                    <div className="mt-0.5 text-xs text-slate-500">Tahun {yearFilter || 'ini'}</div>
                   </div>
                   <div className="glass rounded-2xl sm:rounded-3xl p-3 sm:p-5 shadow-lg border border-white/80 min-w-0">
                     <div className="text-xs text-slate-500">Total Transaksi</div>
                     <div className="mt-1.5 text-lg sm:text-2xl font-bold text-slate-900 whitespace-nowrap">{stats.totalTransaksi}</div>
-                    <div className="mt-0.5 text-xs text-slate-500">Tahun ini</div>
+                    <div className="mt-0.5 text-xs text-slate-500">Tahun {yearFilter || 'ini'}</div>
                   </div>
                 </div>
               </div>
@@ -506,10 +530,10 @@
               {error && <div className="mb-4 sm:mb-5 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm">{error}</div>}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
-                <StatCard title="Total Pemasukan" value={currency(stats.totalPemasukan)} subtitle="Tahun ini" icon="💰" accent="from-sky-500 to-blue-600" />
-                <StatCard title="Total Pengeluaran" value={currency(stats.totalPengeluaran)} subtitle="Tahun ini" icon="📤" accent="from-rose-500 to-pink-600" />
+                <StatCard title="Total Pemasukan" value={currency(stats.totalPemasukan)} subtitle={`Tahun ${yearFilter || 'ini'}`} icon="💰" accent="from-sky-500 to-blue-600" />
+                <StatCard title="Total Pengeluaran" value={currency(stats.totalPengeluaran)} subtitle={`Tahun ${yearFilter || 'ini'}`} icon="📤" accent="from-rose-500 to-pink-600" />
                 <StatCard title="Saldo Akhir" value={currency(stats.saldoAkhir)} subtitle="Saldo terkini" icon="✅" accent="from-emerald-500 to-green-600" />
-                <StatCard title="Total Transaksi" value={stats.totalTransaksi} subtitle="Tahun ini" icon="📊" accent="from-amber-500 to-orange-500" />
+                <StatCard title="Total Transaksi" value={stats.totalTransaksi} subtitle={`Tahun ${yearFilter || 'ini'}`} icon="📊" accent="from-amber-500 to-orange-500" />
               </div>
 
               <div className="mt-4 sm:mt-5 grid lg:grid-cols-2 gap-3 sm:gap-4">
@@ -661,76 +685,59 @@
             </div>
           </section>
 
-          <section id="rate" className="py-12 sm:py-14 bg-white">
+          <section id="rate" className="py-8 sm:py-10 bg-white">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
               <SectionTitle eyebrow="Rate" title="Rate Kontribusi dan Pembiayaan" desc="Informasi lengkap rate kontribusi pegawai dan kegiatan yang dapat dibiayai oleh RESAM dan DANSOS." />
-              <div className="rounded-2xl sm:rounded-3xl bg-slate-50 border border-slate-200 shadow-sm p-5 sm:p-6">
-                <h3 className="text-lg sm:text-xl font-bold text-slate-900 mb-4">Pembiayaan Kegiatan RESAM</h3>
-                <p className="text-sm text-slate-700 mb-4">Pembiayaan kegiatan kebersamaan yang dapat dibiayai oleh RESAM meliputi:</p>
-                <ul className="list-disc list-inside text-sm text-slate-700 mb-6 space-y-1">
-                  <li>Seragam (Sehat Bersih Jaga Bersama)/Senam Bersama</li>
-                  <li>Bedulang</li>
-                  <li>Jumat Bersih</li>
-                  <li>Hari Statistik Nasional (HSN)</li>
-                  <li>Peringatan 17 Agustus</li>
-                  <li>Dan kegiatan lain yang ada dalam program Manajemen Perubahan/CAN</li>
-                </ul>
-
-                <h3 className="text-lg sm:text-xl font-bold text-slate-900 mb-4">Besar Iuran RESAM (Kesepakatan 2 April 2026)</h3>
-                <div className="overflow-x-auto rounded-xl border border-slate-200 shadow">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gradient-to-r from-slate-600 to-slate-700 text-white">
-                      <tr>
-                        <th className="px-4 py-3 text-left font-semibold">Grade</th>
-                        <th className="px-4 py-3 text-right font-semibold">Nilai (Rp)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium">Grade 15</td><td className="px-4 py-3 text-right font-bold">300,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 font-medium">Grade 12</td><td className="px-4 py-3 text-right font-bold">150,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium">Grade 11</td><td className="px-4 py-3 text-right font-bold">135,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 font-medium">Grade 10</td><td className="px-4 py-3 text-right font-bold">85,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium">Grade 9</td><td className="px-4 py-3 text-right font-bold">65,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 font-medium">Grade 8</td><td className="px-4 py-3 text-right font-bold">55,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium">Grade 7</td><td className="px-4 py-3 text-right font-bold">45,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 font-medium">Grade 6</td><td className="px-4 py-3 text-right font-bold">40,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium">Grade 5</td><td className="px-4 py-3 text-right font-bold">30,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 font-medium">Grade 4</td><td className="px-4 py-3 text-right font-bold">30,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium">Grade 3</td><td className="px-4 py-3 text-right font-bold">30,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 font-medium">Grade 2</td><td className="px-4 py-3 text-right font-bold">25,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium">Grade 1</td><td className="px-4 py-3 text-right font-bold">25,000</td></tr>
-                    </tbody>
-                  </table>
+              
+              <div className="space-y-6 sm:space-y-8">
+                {/* RESAM Section */}
+                <div className="rounded-2xl bg-gradient-to-br from-sky-50 to-blue-50 border border-sky-200 shadow-sm p-4 sm:p-6">
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-3">Kegiatan yang Dibiayai RESAM</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3 mb-5">
+                    <div className="rounded-lg bg-white border border-sky-200 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700">👕 Seragam/Senam</div>
+                    <div className="rounded-lg bg-white border border-sky-200 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700">🏃 Bedulang</div>
+                    <div className="rounded-lg bg-white border border-sky-200 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700">🧹 Jumat Bersih</div>
+                    <div className="rounded-lg bg-white border border-sky-200 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700">📊 HSN</div>
+                    <div className="rounded-lg bg-white border border-sky-200 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700">🇮🇩 17 Agustus</div>
+                    <div className="rounded-lg bg-white border border-sky-200 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700">🎯 CAN</div>
+                  </div>
+                  
+                  <h4 className="text-sm font-bold text-slate-900 mb-2">Iuran RESAM Berdasarkan Grade</h4>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-1.5 sm:gap-2">
+                    <div className="rounded bg-sky-600 text-white text-center px-2 py-1.5 text-xs font-bold">Grade</div>
+                    <div className="rounded bg-sky-600 text-white text-center px-2 py-1.5 text-xs font-bold">Rp</div>
+                    <div className="rounded bg-sky-600 text-white text-center px-2 py-1.5 text-xs font-bold">15</div>
+                    <div className="rounded bg-sky-600 text-white text-center px-2 py-1.5 text-xs font-bold">300K</div>
+                    <div className="rounded bg-sky-600 text-white text-center px-2 py-1.5 text-xs font-bold">12</div>
+                    <div className="rounded bg-sky-600 text-white text-center px-2 py-1.5 text-xs font-bold">150K</div>
+                    
+                    {[{g:'11',r:'135K'}, {g:'10',r:'85K'}, {g:'9',r:'65K'}, {g:'8',r:'55K'}, {g:'7',r:'45K'}, {g:'6',r:'40K'}, {g:'5',r:'30K'}, {g:'4',r:'30K'}, {g:'3',r:'30K'}, {g:'2',r:'25K'}, {g:'1',r:'25K'}].map((item, idx) => (
+                      <React.Fragment key={idx}>
+                        <div className="rounded bg-slate-50 border border-sky-100 text-center px-2 py-1.5 text-xs font-medium text-slate-700">{item.g}</div>
+                        <div className="rounded bg-slate-50 border border-sky-100 text-center px-2 py-1.5 text-xs font-bold text-sky-700">{item.r}</div>
+                      </React.Fragment>
+                    ))}
+                  </div>
                 </div>
 
-                <h3 className="text-lg sm:text-xl font-bold text-slate-900 mt-8 mb-4">Rate DANSOS (Kesepakatan 2 April 2026)</h3>
-                <div className="overflow-x-auto rounded-xl border border-slate-200 shadow">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gradient-to-r from-rose-600 to-pink-700 text-white">
-                      <tr>
-                        <th className="px-4 py-3 text-left font-semibold">Jenis Kejadian</th>
-                        <th className="px-4 py-3 text-right font-semibold">Nilai (Rp)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium">Menikah (pegawai/anak pegawai)</td><td className="px-4 py-3 text-right font-bold">1,000,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 font-medium" colSpan="2"><strong>Sakit</strong></td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 pl-8">Ybs/Pasangan/Anak sakit opname dan butuh perawatan intensif/tindakan misal masuk ICU dan atau perlu operasi/sakit serius</td><td className="px-4 py-3 text-right font-bold">1,500,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 pl-8">Rawat inap keluarga inti (ybs/pasangan/anak) minimal 2 malam</td><td className="px-4 py-3 text-right font-bold">750,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 pl-8">Rawat inap keluarga inti (ybs/pasangan/anak) kurang dari 2 malam</td><td className="px-4 py-3 text-right font-bold">400,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 pl-8">Rawat di rumah minimal 5 hari kerja (Ybs)</td><td className="px-4 py-3 text-right font-bold">600,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 pl-8">Kecelakaan parah (Ybs) membutuhkan perawatan</td><td className="px-4 py-3 text-right font-bold">750,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 pl-8">Melahirkan (ybs/pasangan)</td><td className="px-4 py-3 text-right font-bold">750,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium" colSpan="2"><strong>Meninggal</strong></td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 pl-8">Meninggal (Ybs/Pasangan/Anak/Orang tua/Mertua)</td><td className="px-4 py-3 text-right font-bold">1,500,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 pl-8">Meninggal (Ybs/Pasangan/Anak/Orang tua/Mertua)</td><td className="px-4 py-3 text-right font-bold">1,000,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 pl-8">Karangan Bunga ketika di luar Babel (Ybs/Pasangan dan Orang tua Pimpinan/Mertua Pimpinan)</td><td className="px-4 py-3 text-right font-bold">500,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium" colSpan="2"><strong>Pindah/Mutasi</strong></td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 pl-8">Mutasi keluar provinsi (Ybs)</td><td className="px-4 py-3 text-right font-bold">2,000,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 pl-8">Mutasi dalam provinsi (Ybs)</td><td className="px-4 py-3 text-right font-bold">500,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 pl-8">Purnabakti (ybs)</td><td className="px-4 py-3 text-right font-bold">2,000,000</td></tr>
-                    </tbody>
-                  </table>
+                {/* DANSOS Section */}
+                <div className="rounded-2xl bg-gradient-to-br from-rose-50 to-pink-50 border border-rose-200 shadow-sm p-4 sm:p-6">
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-3">Rate DANSOS Berdasarkan Jenis Kejadian</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 text-xs sm:text-sm">
+                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">💍 Menikah:</span> <span className="text-slate-700 text-xs">1 Juta</span></div>
+                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🏥 Opname Intensif:</span> <span className="text-slate-700 text-xs">1,5 Juta</span></div>
+                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🏥 Rawat Inap 2+ Hari:</span> <span className="text-slate-700 text-xs">750K</span></div>
+                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🏥 Rawat Inap &lt; 2 Hari:</span> <span className="text-slate-700 text-xs">400K</span></div>
+                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🏠 Rawat Rumah 5+ Hari:</span> <span className="text-slate-700 text-xs">600K</span></div>
+                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">👶 Melahirkan:</span> <span className="text-slate-700 text-xs">750K</span></div>
+                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🚗 Kecelakaan Parah:</span> <span className="text-slate-700 text-xs">750K</span></div>
+                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">⚖️ Meninggal (Inti):</span> <span className="text-slate-700 text-xs">1,5 Juta</span></div>
+                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">⚖️ Meninggal (Lain):</span> <span className="text-slate-700 text-xs">1 Juta</span></div>
+                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🌹 Karangan Bunga:</span> <span className="text-slate-700 text-xs">500K</span></div>
+                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🚀 Mutasi Luar Prov:</span> <span className="text-slate-700 text-xs">2 Juta</span></div>
+                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🏢 Mutasi Dalam Prov:</span> <span className="text-slate-700 text-xs">500K</span></div>
+                    <div className="rounded-lg bg-white border border-rose-200 p-2.5"><span className="font-bold text-rose-700">🎓 Purnabakti:</span> <span className="text-slate-700 text-xs">2 Juta</span></div>
+                  </div>
                 </div>
               </div>
             </div>
