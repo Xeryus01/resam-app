@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RESAM & DANSOS - Dari Kite Untuk Same-Same</title>
+  <title>RESAM - Dari Kite Untuk Same-Same</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -31,17 +31,15 @@
   <script type="text/babel">
     const { useEffect, useMemo, useRef, useState } = React;
 
-    const RESAM_SHEET_ID = '1WXdKVjv4aqQpEAIkr_BrT-HKUG3EGO06';
-    const RESAM_SHEET_GID = '378656488';
-    const RESAM_SHEET_URL = `https://docs.google.com/spreadsheets/d/${RESAM_SHEET_ID}`;
-    const RESAM_CSV_URL = `https://docs.google.com/spreadsheets/d/${RESAM_SHEET_ID}/export?format=csv&gid=${RESAM_SHEET_GID}`;
-
-    const DANSOS_SHEET_ID = '17LfehIpUrkvy9pam3nFuECH54bLOdRXb';
-    const DANSOS_SHEET_GID = '378656488';
-    const DANSOS_SHEET_URL = `https://docs.google.com/spreadsheets/d/${DANSOS_SHEET_ID}`;
-    const DANSOS_CSV_URL = `https://docs.google.com/spreadsheets/d/${DANSOS_SHEET_ID}/export?format=csv&gid=${DANSOS_SHEET_GID}`;
-    const DANSOS_FOLDER_ID = '16tE9MUvmE4H1iPnRG59qhod_I3HiTytw';
-    const DANSOS_EMBED_URL = `https://drive.google.com/embeddedfolderview?id=${DANSOS_FOLDER_ID}#grid`;
+    const SHEET_ID = '1WXdKVjv4aqQpEAIkr_BrT-HKUG3EGO06';
+    const SHEET_GID = '378656488';
+    const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}`;
+    const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`;
+    const DRIVE_FOLDER_ID = '16tE9MUvmE4H1iPnRG59qhod_I3HiTytw';
+    const DRIVE_FOLDER_URL = `https://drive.google.com/drive/folders/${DRIVE_FOLDER_ID}?usp=sharing`;
+    const DRIVE_EMBED_URL = `https://drive.google.com/embeddedfolderview?id=${DRIVE_FOLDER_ID}#grid`;
+    const GOOGLE_DRIVE_API_KEY = 'AIzaSyA5iWmjK8nnZgmWJuQbqCGeDmHzlize2hY';
+    const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3/files';
 
     const formatter = new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
     const currency = (n) => `Rp ${formatter.format(Math.round(Number(n) || 0))}`;
@@ -126,6 +124,102 @@
       return Number.isNaN(parsed.getTime()) ? null : parsed;
     }
 
+
+
+    function detectYearFromText(text='') {
+      const match = String(text).match(/(?:19|20)\d{2}/);
+      return match ? match[0] : '';
+    }
+
+    function buildDriveThumbnail(fileId, size = 1200) {
+      return `https://drive.google.com/thumbnail?id=${fileId}&sz=w${size}`;
+    }
+
+    function buildDriveViewUrl(fileId) {
+      return `https://drive.google.com/file/d/${fileId}/view`;
+    }
+
+    async function listDriveChildren(folderId, apiKey, pageToken='') {
+      const query = `'${folderId}' in parents and trashed = false`;
+      const params = new URLSearchParams({
+        key: apiKey,
+        q: query,
+        fields: 'nextPageToken, files(id,name,mimeType,webViewLink,thumbnailLink,createdTime,imageMediaMetadata)',
+        orderBy: 'folder,name,createdTime desc',
+        pageSize: '1000',
+        includeItemsFromAllDrives: 'true',
+        supportsAllDrives: 'true',
+      });
+      if (pageToken) params.set('pageToken', pageToken);
+      const response = await fetch(`${DRIVE_API_BASE}?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error('Tidak dapat mengakses Google Drive API. Pastikan API key benar dan folder dibagikan publik.');
+      }
+      return response.json();
+    }
+
+    async function getGalleryYearsFromDrive(folderId, apiKey) {
+      try {
+        const data = await listDriveChildren(folderId, apiKey);
+        const years = new Set();
+        for (const file of (data.files || [])) {
+          const lowerMime = String(file.mimeType || '').toLowerCase();
+          if (lowerMime === 'application/vnd.google-apps.folder') {
+            const year = detectYearFromText(file.name);
+            if (year) years.add(year);
+          }
+        }
+        return Array.from(years).map(y => Number(y)).sort((a, b) => b - a);
+      } catch (error) {
+        console.warn('Gagal mengambil daftar tahun dari Drive:', error);
+        return [];
+      }
+    }
+
+    async function fetchAllDriveImages(rootFolderId, apiKey) {
+      const foldersToVisit = [{ id: rootFolderId, path: [], inferredYear: '' }];
+      const photos = [];
+      while (foldersToVisit.length) {
+        const current = foldersToVisit.shift();
+        let pageToken = '';
+        do {
+          const data = await listDriveChildren(current.id, apiKey, pageToken);
+          pageToken = data.nextPageToken || '';
+          for (const file of (data.files || [])) {
+            const lowerMime = String(file.mimeType || '').toLowerCase();
+            if (lowerMime === 'application/vnd.google-apps.folder') {
+              const folderYear = detectYearFromText(file.name) || current.inferredYear || '';
+              foldersToVisit.push({
+                id: file.id,
+                path: [...current.path, file.name],
+                inferredYear: folderYear,
+              });
+              continue;
+            }
+            if (!lowerMime.startsWith('image/')) continue;
+            const folderPath = current.path.join(' / ');
+            const detectedYear = current.inferredYear || detectYearFromText(`${folderPath} ${file.name} ${file.createdTime || ''}`) || (file.createdTime ? new Date(file.createdTime).getFullYear().toString() : 'Tanpa Tahun');
+            photos.push({
+              id: file.id,
+              name: file.name,
+              url: buildDriveThumbnail(file.id, 1600),
+              thumb: buildDriveThumbnail(file.id, 800),
+              webViewLink: file.webViewLink || buildDriveViewUrl(file.id),
+              folderPath: folderPath || 'Folder Utama',
+              year: detectedYear || 'Tanpa Tahun',
+              createdTime: file.createdTime || '',
+            });
+          }
+        } while (pageToken);
+      }
+      return photos.sort((a, b) => {
+        const ay = Number(a.year) || 0;
+        const by = Number(b.year) || 0;
+        if (by !== ay) return by - ay;
+        return String(b.createdTime).localeCompare(String(a.createdTime));
+      });
+    }
+
     function transformRows(rawRows) {
       const cleaned = rawRows.map(r => r.map(c => String(c || '').trim()));
       const records = [];
@@ -152,38 +246,6 @@
       return records.sort((a,b) => a.tanggal - b.tanggal);
     }
 
-    function transformRowsDansos(rawRows) {
-      const cleaned = rawRows.map(r => r.map(c => String(c || '').trim()));
-      const records = [];
-      for (const r of cleaned) {
-        if (r.length < 3) continue;
-        // Coba gunakan kolom A (index 0), jika kosong gunakan kolom B (index 1)
-        let dateCandidate = parseDateIndo(r[0]);
-        if (!dateCandidate && r[1]) {
-          dateCandidate = parseDateIndo(r[1]);
-        }
-        if (!dateCandidate) continue;
-        
-        // Struktur DANSOS: A=Tanggal1, B=Tanggal2, C=Uraian, D=Kredit, E=Debit, F=Saldo, G=Keterangan
-        const uraian = r[2] || '';
-        const kredit = parseNumber(r[3]);
-        const debit = parseNumber(r[4]);
-        const saldo = parseNumber(r[5]);
-        
-        if (!uraian && !kredit && !debit && !saldo) continue;
-        records.push({
-          tanggalRaw: r[0] || r[1],
-          tanggal: dateCandidate,
-          uraian,
-          rincian: '',
-          kredit,
-          debit,
-          saldo,
-        });
-      }
-      return records.sort((a,b) => a.tanggal - b.tanggal);
-    }
-
     function StatCard({ title, value, subtitle, icon, accent='from-sky-500 to-blue-600' }) {
       return (
         <div className="rounded-2xl sm:rounded-3xl bg-white shadow-sm border border-slate-100 p-4 sm:p-5 lg:p-6">
@@ -199,12 +261,12 @@
       );
     }
 
-    function SectionTitle({ eyebrow, title, desc, isDark = false }) {
+    function SectionTitle({ eyebrow, title, desc }) {
       return (
         <div className="max-w-3xl mx-auto text-center mb-6 sm:mb-8">
-          {eyebrow && <div className={`text-xs font-semibold uppercase tracking-[0.2em] ${isDark ? 'text-sky-300' : 'text-sky-700'}`}>{eyebrow}</div>}
-          <h2 className={`mt-1.5 sm:mt-2 text-xl sm:text-2xl lg:text-3xl font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>{title}</h2>
-          {desc && <p className={`mt-1.5 sm:mt-2 text-xs sm:text-sm lg:text-base ${isDark ? 'text-sky-100' : 'text-slate-600'} leading-5 sm:leading-6`}>{desc}</p>}
+          {eyebrow && <div className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">{eyebrow}</div>}
+          <h2 className="mt-1.5 sm:mt-2 text-xl sm:text-2xl lg:text-3xl font-bold text-slate-900">{title}</h2>
+          {desc && <p className="mt-1.5 sm:mt-2 text-xs sm:text-sm lg:text-base text-slate-600 leading-5 sm:leading-6">{desc}</p>}
         </div>
       );
     }
@@ -273,69 +335,112 @@
     }
 
     function App() {
-      const [resamRows, setResamRows] = useState([]);
-      const [dansosRows, setDansosRows] = useState([]);
+      const [rows, setRows] = useState([]);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState('');
       const [query, setQuery] = useState('');
       const [yearFilter, setYearFilter] = useState('');
       const [currentPage, setCurrentPage] = useState(1);
-      const [activeTab, setActiveTab] = useState('resam'); // 'resam' or 'dansos'
+      const [galleryPhotos, setGalleryPhotos] = useState([]);
+      const [galleryLoading, setGalleryLoading] = useState(true);
+      const [galleryError, setGalleryError] = useState('');
+      const [selectedGalleryYear, setSelectedGalleryYear] = useState('');
+      const [galleryIndex, setGalleryIndex] = useState(0);
+      const [galleryPhotosLoaded, setGalleryPhotosLoaded] = useState({});
       const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+      const [availableGalleryYears, setAvailableGalleryYears] = useState([]);
       const itemsPerPage = 10;
 
+      // Load available gallery years from Google Drive folders on mount
       useEffect(() => {
-        Promise.all([
-          fetch(RESAM_CSV_URL).then(res => res.ok ? res.text() : Promise.reject('RESAM sheet not accessible')).then(text => transformRows(parseCSV(text))).catch(() => {
-            // Fallback dummy data for RESAM
-            return [
-              { tanggalRaw: '1 Januari 2024', tanggal: new Date(2024, 0, 1), uraian: 'Pemasukan Bulanan', rincian: '', kredit: 50000, debit: 0, saldo: 50000 },
-              { tanggalRaw: '15 Januari 2024', tanggal: new Date(2024, 0, 15), uraian: 'Konsumsi', rincian: 'Snack dan minum', kredit: 0, debit: 15000, saldo: 35000 },
-              { tanggalRaw: '1 Februari 2024', tanggal: new Date(2024, 1, 1), uraian: 'Pemasukan Bulanan', rincian: '', kredit: 50000, debit: 0, saldo: 85000 },
-            ];
-          }),
-          fetch(DANSOS_CSV_URL).then(res => res.ok ? res.text() : Promise.reject('DANSOS sheet not accessible')).then(text => transformRowsDansos(parseCSV(text))).catch(() => {
-            // Fallback dummy data for DANSOS
-            return [
-              { tanggalRaw: '5 Januari 2024', tanggal: new Date(2024, 0, 5), uraian: 'Pemasukan DANSOS', rincian: '', kredit: 80000, debit: 0, saldo: 80000 },
-              { tanggalRaw: '12 Januari 2024', tanggal: new Date(2024, 0, 12), uraian: 'Bantuan Kesehatan', rincian: '', kredit: 0, debit: 500000, saldo: -420000 },
-              { tanggalRaw: '20 Januari 2024', tanggal: new Date(2024, 0, 20), uraian: 'Pemasukan DANSOS', rincian: '', kredit: 80000, debit: 0, saldo: -340000 },
-            ];
-          })
-        ]).then(([resam, dansos]) => {
-          setResamRows(resam);
-          setDansosRows(dansos);
-          if (resam.length === 0 && dansos.length === 0) {
-            setError('Data tidak tersedia. Menampilkan data contoh.');
+        let mounted = true;
+        async function loadAvailableYears() {
+          if (!GOOGLE_DRIVE_API_KEY || GOOGLE_DRIVE_API_KEY === 'PASTE_YOUR_GOOGLE_DRIVE_API_KEY_HERE') {
+            return;
           }
-        }).catch((err) => {
-          console.error('Error loading data:', err);
-          setError('Data spreadsheet tidak dapat dimuat otomatis. Menampilkan data contoh.');
-        }).finally(() => setLoading(false));
+          try {
+            const years = await getGalleryYearsFromDrive(DRIVE_FOLDER_ID, GOOGLE_DRIVE_API_KEY);
+            if (mounted) {
+              setAvailableGalleryYears(years);
+            }
+          } catch (err) {
+            console.warn('Gagal memuat daftar tahun galeri:', err);
+          }
+        }
+        loadAvailableYears();
+        return () => {
+          mounted = false;
+        };
       }, []);
 
-      const currentRows = activeTab === 'resam' ? resamRows : dansosRows;
+      useEffect(() => {
+        fetch(CSV_URL)
+          .then(res => res.text())
+          .then(text => {
+            const parsed = transformRows(parseCSV(text));
+            setRows(parsed);
+          })
+          .catch(() => {
+            setError('Data spreadsheet tidak dapat dimuat otomatis. Silakan cek koneksi atau izin file Google Sheets.');
+          })
+          .finally(() => setLoading(false));
+      }, []);
+
+
+
+      useEffect(() => {
+        let mounted = true;
+        async function loadGalleryByYear() {
+          if (!selectedGalleryYear || selectedGalleryYear === '') return;
+          if (galleryPhotosLoaded[selectedGalleryYear]) return;
+          
+          if (!GOOGLE_DRIVE_API_KEY || GOOGLE_DRIVE_API_KEY === 'PASTE_YOUR_GOOGLE_DRIVE_API_KEY_HERE') {
+            if (mounted) {
+              setGalleryError('Galeri otomatis belum aktif. Isi GOOGLE_DRIVE_API_KEY agar foto dari seluruh folder/subfolder dapat dimuat.');
+              setGalleryLoading(false);
+            }
+            return;
+          }
+          
+          try {
+            setGalleryLoading(true);
+            const photos = await fetchAllDriveImages(DRIVE_FOLDER_ID, GOOGLE_DRIVE_API_KEY);
+            if (mounted) {
+              setGalleryPhotos(photos);
+              setGalleryPhotosLoaded(prev => ({...prev, [selectedGalleryYear]: true}));
+              if (!photos.length) setGalleryError('Belum ada foto publik yang ditemukan di folder dokumentasi.');
+              else setGalleryError('');
+            }
+          } catch (err) {
+            if (mounted) setGalleryError(err.message || 'Galeri otomatis gagal dimuat dari Google Drive API.');
+          } finally {
+            if (mounted) setGalleryLoading(false);
+          }
+        }
+        loadGalleryByYear();
+        return () => { mounted = false; };
+      }, [selectedGalleryYear, galleryPhotosLoaded]);
 
       // Set default year filter ke tahun terakhir
       useEffect(() => {
-        if (currentRows.length > 0) {
-          const years = [...new Set(currentRows.map(r => r.tanggal.getFullYear()))].sort((a,b) => b-a);
+        if (rows.length > 0) {
+          const years = [...new Set(rows.map(r => r.tanggal.getFullYear()))].sort((a,b) => b-a);
           if (years.length > 0 && !yearFilter) {
             setYearFilter(String(years[0]));
           }
         }
-      }, [currentRows, yearFilter, activeTab]);
+      }, [rows, yearFilter]);
 
       const years = useMemo(() => {
-        return [...new Set(currentRows.map(r => r.tanggal.getFullYear()))].sort((a,b) => b-a);
-      }, [currentRows]);
+        return [...new Set(rows.map(r => r.tanggal.getFullYear()))].sort((a,b) => b-a);
+      }, [rows]);
 
       // Filter by year only for stats/charts
       const yearFilteredRows = useMemo(() => {
-        return currentRows.filter(r => {
+        return rows.filter(r => {
           return yearFilter === 'all' || String(r.tanggal.getFullYear()) === yearFilter;
         }).sort((a, b) => b.tanggal - a.tanggal);
-      }, [currentRows, yearFilter]);
+      }, [rows, yearFilter]);
 
       // Filter by year and search query for table
       const filteredRows = useMemo(() => {
@@ -355,18 +460,56 @@
       // Reset to page 1 when filter changes
       useEffect(() => {
         setCurrentPage(1);
-      }, [yearFilter, query, activeTab]);
+      }, [yearFilter, query]);
+
+
+
+      const galleryYears = useMemo(() => {
+        // Prioritize years from Google Drive folder structure
+        if (availableGalleryYears.length > 0) {
+          return availableGalleryYears;
+        }
+        // Fallback to years detected from photos
+        const years = [...new Set(galleryPhotos.map(item => item.year).filter(Boolean))]
+          .sort((a, b) => (Number(b) || 0) - (Number(a) || 0));
+        return years;
+      }, [galleryPhotos, availableGalleryYears]);
+
+      const filteredGalleryPhotos = useMemo(() => {
+        return galleryPhotos.filter(item => selectedGalleryYear === 'all' || item.year === selectedGalleryYear);
+      }, [galleryPhotos, selectedGalleryYear]);
+
+      useEffect(() => {
+        setGalleryIndex(0);
+      }, [selectedGalleryYear, galleryPhotos.length]);
+
+      useEffect(() => {
+        if (filteredGalleryPhotos.length <= 1) return;
+        const interval = setInterval(() => {
+          setGalleryIndex(prev => (prev + 1) % filteredGalleryPhotos.length);
+        }, 3500);
+        return () => clearInterval(interval);
+      }, [filteredGalleryPhotos.length]);
+
+      const visibleGalleryPhotos = useMemo(() => {
+        if (!filteredGalleryPhotos.length) return [];
+        const count = Math.min(4, filteredGalleryPhotos.length);
+        return Array.from({ length: count }, (_, offset) => filteredGalleryPhotos[(galleryIndex + offset) % filteredGalleryPhotos.length]);
+      }, [filteredGalleryPhotos, galleryIndex]);
 
       const stats = useMemo(() => {
         const currentYear = new Date().getFullYear();
-        const currentYearRows = currentRows.filter(r => r.tanggal.getFullYear() === currentYear).sort((a, b) => a.tanggal - b.tanggal);
+        const currentYearRows = rows.filter(r => r.tanggal.getFullYear() === currentYear).sort((a, b) => a.tanggal - b.tanggal);
         const totalPemasukan = currentYearRows.reduce((s, r) => s + r.kredit, 0);
         const totalPengeluaran = currentYearRows.reduce((s, r) => s + r.debit, 0);
         const saldoAkhir = currentYearRows.length ? currentYearRows[currentYearRows.length - 1].saldo : 0;
         const totalTransaksi = yearFilteredRows.length;
         const latest = currentYearRows.length ? currentYearRows[currentYearRows.length - 1] : yearFilteredRows.length ? yearFilteredRows[yearFilteredRows.length - 1] : null;
-        return { totalPemasukan, totalPengeluaran, saldoAkhir, totalTransaksi, latest };
-      }, [yearFilteredRows, currentRows]);
+        const danaSosial = yearFilteredRows
+          .filter(r => slug(`${r.uraian} ${r.rincian}`).includes('dana sosial') || slug(r.uraian).includes('dansos'))
+          .reduce((s, r) => s + Math.max(r.debit, r.kredit), 0);
+        return { totalPemasukan, totalPengeluaran, saldoAkhir, totalTransaksi, latest, danaSosial };
+      }, [yearFilteredRows, rows]);
 
       const monthlySeries = useMemo(() => {
         const map = new Map();
@@ -403,13 +546,7 @@
           .slice(0, 5);
       }, [yearFilteredRows]);
 
-      const resamDefinition = `RESAM merupakan singkatan dari "Dari Kite Untuk Same-Same", yaitu urunan seluruh pegawai BPS Provinsi Kepulauan Bangka Belitung (tidak termasuk pegawai outsourcing) sesuai rate yang telah disepakati. Dana ini dikelola oleh Pengurus RESAM dan dimanfaatkan untuk kegiatan kebersamaan serta kegiatan sosial yang melibatkan seluruh pegawai termasuk pegawai outsourcing.`;
-
-      const dansosDefinition = `DANSOS merupakan singkatan dari Dana Sosial, yaitu dana yang dikumpulkan dari pegawai BPS Provinsi Kepulauan Bangka Belitung untuk kegiatan sosial dan kemanusiaan. Dana ini digunakan untuk membantu masyarakat yang membutuhkan, seperti bantuan kesehatan, pendidikan, dan kegiatan sosial lainnya.`;
-
-      const currentDefinition = activeTab === 'resam' ? resamDefinition : dansosDefinition;
-      const currentTitle = activeTab === 'resam' ? 'RESAM' : 'DANSOS';
-      const currentSubtitle = activeTab === 'resam' ? 'Dari Kite Untuk Same-Same' : 'Dana Sosial';
+      const resamDefinition = `RESAM merupakan singkatan dari “Dari Kite Untuk Same-Same”, yaitu urunan seluruh pegawai BPS Provinsi Kepulauan Bangka Belitung (tidak termasuk pegawai outsourcing) sesuai rate yang telah disepakati. Dana ini dikelola oleh Pengurus RESAM dan dimanfaatkan untuk kegiatan kebersamaan serta kegiatan sosial yang melibatkan seluruh pegawai termasuk pegawai outsourcing.`;
 
       return (
         <div className="min-h-screen text-slate-800">
@@ -418,15 +555,14 @@
               <a href="#beranda" className="flex items-center gap-2 sm:gap-3 font-bold text-slate-900 shrink-0">
                 <img src="logo.png" alt="RESAM Logo" className="h-8 sm:h-10 w-8 sm:w-10 rounded-xl shadow object-contain" />
                 <div>
-                  <div className="text-sm sm:text-lg leading-none">{currentTitle}</div>
-                  <div className="text-[10px] sm:text-xs text-slate-500 font-medium">{currentSubtitle}</div>
+                  <div className="text-sm sm:text-lg leading-none">RESAM</div>
+                  <div className="text-[10px] sm:text-xs text-slate-500 font-medium">Dari Kite Untuk Same-Same</div>
                 </div>
               </a>
               <nav className="desktop-nav items-center gap-6 text-sm text-slate-600">
                 <a href="#beranda" className="hover:text-sky-700 transition">Beranda</a>
                 <a href="#tentang" className="hover:text-sky-700 transition">Tentang</a>
                 <a href="#keuangan" className="hover:text-sky-700 transition">Data</a>
-                <a href="#rate" className="hover:text-sky-700 transition">Rate</a>
                 <a href="#dokumentasi" className="hover:text-sky-700 transition">Dokumentasi</a>
               </nav>
               <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="mobile-nav items-center gap-3 text-slate-700">
@@ -438,7 +574,6 @@
                 <a href="#beranda" onClick={() => setMobileMenuOpen(false)} className="py-2 text-slate-700 hover:text-sky-700 transition">Beranda</a>
                 <a href="#tentang" onClick={() => setMobileMenuOpen(false)} className="py-2 text-slate-700 hover:text-sky-700 transition">Tentang</a>
                 <a href="#keuangan" onClick={() => setMobileMenuOpen(false)} className="py-2 text-slate-700 hover:text-sky-700 transition">Data</a>
-                <a href="#rate" onClick={() => setMobileMenuOpen(false)} className="py-2 text-slate-700 hover:text-sky-700 transition">Rate</a>
                 <a href="#dokumentasi" onClick={() => setMobileMenuOpen(false)} className="py-2 text-slate-700 hover:text-sky-700 transition">Dokumentasi</a>
               </div>
             )}
@@ -449,21 +584,15 @@
               <div className="grid lg:grid-cols-2 gap-6 sm:gap-8 items-center">
                 <div>
                   <div className="inline-flex items-center gap-2 rounded-full bg-white shadow-sm border border-sky-100 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm text-sky-700 font-semibold">Platform transparansi dana kebersamaan BPS Provinsi Kepulauan Bangka Belitung</div>
-                  <h1 className="mt-3 sm:mt-4 text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-slate-900">{currentTitle}</h1>
-                  <div className="mt-2 text-lg sm:text-xl text-sky-700 font-semibold">{currentSubtitle}</div>
-                  <p className="mt-3 sm:mt-4 text-sm sm:text-base lg:text-lg leading-6 sm:leading-7 text-slate-600">{currentDefinition}</p>
+                  <h1 className="mt-3 sm:mt-4 text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-slate-900">RESAM</h1>
+                  <div className="mt-2 text-lg sm:text-xl text-sky-700 font-semibold">"Dari Kite Untuk Same-Same"</div>
+                  <p className="mt-3 sm:mt-4 text-sm sm:text-base lg:text-lg leading-6 sm:leading-7 text-slate-600">RESAM merupakan singkatan dari "Dari Kite Untuk Same-Same", yaitu urusan seluruh pegawai BPS Provinsi Kepulauan Bangka Belitung (tidak termasuk pegawai outsourcing). Dana ini dikelola oleh Pengurus RESAM dan dimanfaatkan untuk kegiatan kebersamaan serta kegiatan sosial yang melibatkan seluruh pegawai termasuk pegawai outsourcing.</p>
                   <div className="mt-4 sm:mt-5 flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3">
-                    <button onClick={() => setActiveTab('resam')} className={`rounded-xl px-4 sm:px-5 py-2 sm:py-2.5 font-semibold shadow transition text-xs sm:text-sm ${activeTab === 'resam' ? 'bg-sky-600 text-white' : 'bg-white text-sky-600 border border-sky-600'}`}>RESAM</button>
-                    <button onClick={() => setActiveTab('dansos')} className={`rounded-xl px-4 sm:px-5 py-2 sm:py-2.5 font-semibold shadow transition text-xs sm:text-sm ${activeTab === 'dansos' ? 'bg-sky-600 text-white' : 'bg-white text-sky-600 border border-sky-600'}`}>DANSOS</button>
-                    <a href={activeTab === 'resam' ? RESAM_SHEET_URL : DANSOS_SHEET_URL} target="_blank" className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-4 sm:px-5 py-2 sm:py-2.5 font-semibold shadow transition text-xs sm:text-sm text-center">Lihat Data Lengkap</a>
+                    <a href={SHEET_URL} target="_blank" className="rounded-xl bg-sky-600 hover:bg-sky-700 text-white px-4 sm:px-5 py-2 sm:py-2.5 font-semibold shadow transition text-xs sm:text-sm text-center">Lihat Data Lengkap</a>
+                    <a href={DRIVE_FOLDER_URL} target="_blank" className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-4 sm:px-5 py-2 sm:py-2.5 font-semibold shadow transition text-xs sm:text-sm text-center">Publikasi Lebih Lanjut</a>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                  <div className="glass rounded-2xl sm:rounded-3xl p-3 sm:p-5 shadow-lg border border-white/80 min-w-0">
-                    <div className="text-xs text-slate-500">Saldo {currentTitle} Sekarang</div>
-                    <div className="mt-1.5 text-lg sm:text-2xl font-bold text-slate-900 whitespace-nowrap">{currency(stats.saldoAkhir)}</div>
-                    <div className="mt-0.5 text-xs text-slate-500">Update terakhir</div>
-                  </div>
                   <div className="glass rounded-2xl sm:rounded-3xl p-3 sm:p-5 shadow-lg border border-white/80 min-w-0">
                     <div className="text-xs text-slate-500">Total Pemasukan</div>
                     <div className="mt-1.5 text-lg sm:text-2xl font-bold text-slate-900 whitespace-nowrap">{currency(stats.totalPemasukan)}</div>
@@ -474,34 +603,40 @@
                     <div className="mt-1.5 text-lg sm:text-2xl font-bold text-slate-900 whitespace-nowrap">{currency(stats.totalPengeluaran)}</div>
                     <div className="mt-0.5 text-xs text-slate-500">Tahun ini</div>
                   </div>
-                  <div className="glass rounded-2xl sm:rounded-3xl p-3 sm:p-5 shadow-lg border border-white/80 min-w-0">
-                    <div className="text-xs text-slate-500">Total Transaksi</div>
-                    <div className="mt-1.5 text-lg sm:text-2xl font-bold text-slate-900 whitespace-nowrap">{stats.totalTransaksi}</div>
-                    <div className="mt-0.5 text-xs text-slate-500">Tahun ini</div>
+                  <div className="glass rounded-2xl sm:rounded-3xl p-3 sm:p-5 shadow-lg border border-white/80 sm:col-span-2 min-w-0">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
+                      <div className="min-w-0">
+                        <div className="text-xs text-slate-500">Saldo Terakhir</div>
+                        <div className="mt-1.5 text-2xl sm:text-4xl font-black text-slate-900 whitespace-nowrap">{currency(stats.saldoAkhir)}</div>
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {stats.latest ? `Update: ${stats.latest.tanggal.toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'2-digit' })}` : 'Menunggu data'}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </section>
 
-          {/*<section id="tentang" className="py-12 sm:py-14 bg-slate-50 border-y border-slate-200">
+          <section id="tentang" className="py-12 sm:py-14 bg-slate-50 border-y border-slate-200">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-              <SectionTitle eyebrow="Tentang" title={`Sejarah Singkat ${currentTitle}`} desc={`Inisiatif kebersamaan internal yang dikelola untuk mendukung kegiatan sosial dan kebersamaan di lingkungan BPS Provinsi Kepulauan Bangka Belitung.`} />
+              <SectionTitle eyebrow="Tentang" title="Sejarah Singkat RESAM" desc="Inisiatif kebersamaan internal yang dikelola untuk mendukung kegiatan sosial dan kebersamaan di lingkungan BPS Provinsi Kepulauan Bangka Belitung." />
               <div className="rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm p-5 sm:p-6">
-                <div className="inline-flex rounded-full bg-sky-100 text-sky-700 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold">Definisi {currentTitle}</div>
-                <p className="mt-4 text-sm sm:text-base text-slate-700 leading-6 sm:leading-7">{currentDefinition}</p>
+                <div className="inline-flex rounded-full bg-sky-100 text-sky-700 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold">Definisi RESAM</div>
+                <p className="mt-4 text-sm sm:text-base text-slate-700 leading-6 sm:leading-7">{resamDefinition}</p>
                 <ul className="mt-4 space-y-2 text-sm sm:text-base text-slate-700">
-                  <li className="flex gap-2.5"><span>✅</span><span>Dikelola oleh Pengurus {currentTitle} secara terstruktur.</span></li>
+                  <li className="flex gap-2.5"><span>✅</span><span>Dikelola oleh Pengurus RESAM secara terstruktur.</span></li>
                   <li className="flex gap-2.5"><span>✅</span><span>Dimanfaatkan untuk kegiatan kebersamaan dan sosial.</span></li>
                   <li className="flex gap-2.5"><span>✅</span><span>Melibatkan seluruh pegawai termasuk pegawai outsourcing dalam pemanfaatannya.</span></li>
                 </ul>
               </div>
             </div>
-          </section>*/}
+          </section>
 
           <section id="keuangan" className="py-10 sm:py-12 bg-slate-100">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-              <SectionTitle eyebrow="Data & Statistik" title={`Pengelolaan Dana ${currentTitle}`} desc={`Ringkasan keuangan berdasarkan data spreadsheet aktif, termasuk statistik pemasukan, pengeluaran, saldo, dan komposisi pengeluaran.`} />
+              <SectionTitle eyebrow="Data & Statistik" title="Pengelolaan Dana RESAM dan DANSOS" desc="Ringkasan keuangan berdasarkan data spreadsheet aktif, termasuk statistik pemasukan, pengeluaran, saldo, dan komposisi pengeluaran." />
 
               {error && <div className="mb-4 sm:mb-5 rounded-xl border border-amber-300 bg-amber-50 text-amber-800 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm">{error}</div>}
 
@@ -509,20 +644,20 @@
                 <StatCard title="Total Pemasukan" value={currency(stats.totalPemasukan)} subtitle="Tahun ini" icon="💰" accent="from-sky-500 to-blue-600" />
                 <StatCard title="Total Pengeluaran" value={currency(stats.totalPengeluaran)} subtitle="Tahun ini" icon="📤" accent="from-rose-500 to-pink-600" />
                 <StatCard title="Saldo Akhir" value={currency(stats.saldoAkhir)} subtitle="Saldo terkini" icon="✅" accent="from-emerald-500 to-green-600" />
-                <StatCard title="Total Transaksi" value={stats.totalTransaksi} subtitle="Tahun ini" icon="📊" accent="from-amber-500 to-orange-500" />
+                <StatCard title="Dana Sosial Terdeteksi" value={currency(stats.danaSosial)} subtitle="Dari transaksi dansos" icon="🤲" accent="from-amber-500 to-orange-500" />
               </div>
 
               <div className="mt-4 sm:mt-5 grid lg:grid-cols-2 gap-3 sm:gap-4">
                 <div className="rounded-2xl bg-white border border-slate-200 p-3 sm:p-5 shadow-sm min-h-[300px]">
                   <div className="mb-2.5 sm:mb-3">
-                    <h3 className="text-base sm:text-lg font-bold">Perkembangan Saldo {currentTitle}</h3>
+                    <h3 className="text-base sm:text-lg font-bold">Perkembangan Saldo</h3>
                   </div>
                   {monthlySeries.length ? <LineChart labels={monthlySeries.map(x => x.label)} data={monthlySeries.map(x => x.saldo)} /> : <div className="text-slate-500 text-sm">Belum ada data.</div>}
                 </div>
 
                 <div className="rounded-2xl bg-white border border-slate-200 p-3 sm:p-5 shadow-sm min-h-[300px]">
                   <div className="mb-2.5 sm:mb-3">
-                    <h3 className="text-base sm:text-lg font-bold">Komposisi Pengeluaran {currentTitle}</h3>
+                    <h3 className="text-base sm:text-lg font-bold">Komposisi Pengeluaran</h3>
                   </div>
                   {Object.keys(expenseByCategory).length ? <DoughnutChart labels={Object.keys(expenseByCategory)} data={Object.values(expenseByCategory)} /> : <div className="text-slate-500 text-sm">Belum ada data.</div>}
                 </div>
@@ -530,7 +665,7 @@
 
               <div className="mt-4 sm:mt-5 grid lg:grid-cols-2 gap-3 sm:gap-4">
                 <div className="rounded-2xl bg-white border border-slate-200 p-3 sm:p-5 shadow-sm">
-                  <h3 className="text-base sm:text-lg font-bold">Pengeluaran Terbesar {currentTitle}</h3>
+                  <h3 className="text-base sm:text-lg font-bold">Pengeluaran Terbesar</h3>
                   <div className="mt-3 space-y-2">
                     {highlights.map((item, idx) => (
                       <div key={idx} className="rounded-xl border border-slate-100 bg-slate-50 p-2 sm:p-3 flex items-start justify-between gap-2 sm:gap-3">
@@ -545,7 +680,7 @@
                 </div>
 
                 <div className="rounded-2xl bg-white border border-slate-200 p-3 sm:p-5 shadow-sm">
-                  <h3 className="text-base sm:text-lg font-bold">Ringkasan {currentTitle}</h3>
+                  <h3 className="text-base sm:text-lg font-bold">Ringkasan</h3>
                   <div className="mt-3 grid sm:grid-cols-2 gap-2 sm:gap-3">
                     <div className="rounded-xl bg-slate-50 p-2 sm:p-3 border border-slate-200">
                       <div className="text-xs text-slate-500">Transaksi</div>
@@ -553,7 +688,7 @@
                     </div>
                     <div className="rounded-xl bg-slate-50 p-2 sm:p-3 border border-slate-200">
                       <div className="text-xs text-slate-500">Periode</div>
-                      <div className="mt-1 text-sm font-bold">{currentRows.length ? `${currentRows[0].tanggal.getFullYear()} - ${currentRows[currentRows.length-1].tanggal.getFullYear()}` : '-'}</div>
+                      <div className="mt-1 text-sm font-bold">{rows.length ? `${rows[0].tanggal.getFullYear()} - ${rows[rows.length-1].tanggal.getFullYear()}` : '-'}</div>
                     </div>
                     <div className="rounded-xl bg-slate-50 p-2 sm:p-3 border border-slate-200 sm:col-span-2">
                       <div className="text-xs text-slate-500">Update Terakhir</div>
@@ -566,7 +701,7 @@
               <div className="mt-4 sm:mt-5 rounded-2xl bg-white border border-slate-200 p-3 sm:p-5 shadow-sm">
                 <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-2 sm:gap-3 mb-4">
                   <div>
-                    <h3 className="text-base sm:text-lg font-bold">Tabel Transaksi {currentTitle}</h3>
+                    <h3 className="text-base sm:text-lg font-bold">Tabel Transaksi</h3>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-1.5 sm:gap-2">
                     <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cari uraian..." className="rounded-lg border border-slate-300 px-2.5 sm:px-3 py-1.5 sm:py-2 w-full sm:w-56 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 text-xs sm:text-sm" />
@@ -574,7 +709,7 @@
                       <option value="all">Semua Tahun</option>
                       {years.map(y => <option key={y} value={String(y)}>{y}</option>)}
                     </select>
-                    <a href={activeTab === 'resam' ? RESAM_CSV_URL : DANSOS_CSV_URL} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-sky-600 hover:bg-sky-700 text-white px-2.5 sm:px-3 py-1.5 sm:py-2 text-center font-semibold shadow transition text-xs sm:text-sm whitespace-nowrap">Unduh CSV</a>
+                    <a href={CSV_URL} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-sky-600 hover:bg-sky-700 text-white px-2.5 sm:px-3 py-1.5 sm:py-2 text-center font-semibold shadow transition text-xs sm:text-sm whitespace-nowrap">Unduh CSV</a>
                   </div>
                 </div>
 
@@ -661,76 +796,111 @@
             </div>
           </section>
 
-          <section id="rate" className="py-12 sm:py-14 bg-white">
+          <section className="py-12 sm:py-14 bg-white">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-              <SectionTitle eyebrow="Rate" title="Rate Kontribusi dan Pembiayaan" desc="Informasi lengkap rate kontribusi pegawai dan kegiatan yang dapat dibiayai oleh RESAM dan DANSOS." />
-              <div className="rounded-2xl sm:rounded-3xl bg-slate-50 border border-slate-200 shadow-sm p-5 sm:p-6">
-                <h3 className="text-lg sm:text-xl font-bold text-slate-900 mb-4">Pembiayaan Kegiatan RESAM</h3>
-                <p className="text-sm text-slate-700 mb-4">Pembiayaan kegiatan kebersamaan yang dapat dibiayai oleh RESAM meliputi:</p>
-                <ul className="list-disc list-inside text-sm text-slate-700 mb-6 space-y-1">
-                  <li>Seragam (Sehat Bersih Jaga Bersama)/Senam Bersama</li>
-                  <li>Bedulang</li>
-                  <li>Jumat Bersih</li>
-                  <li>Hari Statistik Nasional (HSN)</li>
-                  <li>Peringatan 17 Agustus</li>
-                  <li>Dan kegiatan lain yang ada dalam program Manajemen Perubahan/CAN</li>
-                </ul>
-
-                <h3 className="text-lg sm:text-xl font-bold text-slate-900 mb-4">Besar Iuran RESAM (Kesepakatan 2 April 2026)</h3>
-                <div className="overflow-x-auto rounded-xl border border-slate-200 shadow">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gradient-to-r from-slate-600 to-slate-700 text-white">
-                      <tr>
-                        <th className="px-4 py-3 text-left font-semibold">Grade</th>
-                        <th className="px-4 py-3 text-right font-semibold">Nilai (Rp)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium">Grade 15</td><td className="px-4 py-3 text-right font-bold">300,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 font-medium">Grade 12</td><td className="px-4 py-3 text-right font-bold">150,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium">Grade 11</td><td className="px-4 py-3 text-right font-bold">135,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 font-medium">Grade 10</td><td className="px-4 py-3 text-right font-bold">85,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium">Grade 9</td><td className="px-4 py-3 text-right font-bold">65,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 font-medium">Grade 8</td><td className="px-4 py-3 text-right font-bold">55,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium">Grade 7</td><td className="px-4 py-3 text-right font-bold">45,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 font-medium">Grade 6</td><td className="px-4 py-3 text-right font-bold">40,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium">Grade 5</td><td className="px-4 py-3 text-right font-bold">30,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 font-medium">Grade 4</td><td className="px-4 py-3 text-right font-bold">30,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium">Grade 3</td><td className="px-4 py-3 text-right font-bold">30,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 font-medium">Grade 2</td><td className="px-4 py-3 text-right font-bold">25,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium">Grade 1</td><td className="px-4 py-3 text-right font-bold">25,000</td></tr>
-                    </tbody>
-                  </table>
+              <SectionTitle eyebrow="Ketentuan" title="Rate Dana Sosial & Iuran RESAM" desc="Kesepakatan resmi pengelolaan dana sosial dan iuran RESAM berdasarkan keputusan per tanggal 2 April 2026." />
+              
+              <div className="grid lg:grid-cols-2 gap-4 sm:gap-5 mb-8">
+                {/* Rate Dana Sosial */}
+                <div className="rounded-3xl bg-slate-50 border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-3 sm:px-5 py-2.5 sm:py-3">
+                    <h3 className="text-base sm:text-lg font-bold">Rate Dana Sosial</h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs sm:text-sm">
+                      <thead className="bg-slate-100">
+                        <tr>
+                          <th className="px-2.5 sm:px-3 py-1.5 sm:py-2 text-left font-semibold text-slate-700">Kategori</th>
+                          <th className="px-2.5 sm:px-3 py-1.5 sm:py-2 text-right font-semibold text-slate-700">Nominal</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        <tr className="hover:bg-slate-100"><td colSpan="2" className="px-3 sm:px-4 py-2 sm:py-3 font-bold text-amber-700 text-sm sm:text-base">PERNIKAHAN</td></tr>
+                        <tr><td className="px-3 sm:px-4 py-2 sm:py-3">Menikah (pegawai/anak pegawai)</td><td className="px-3 sm:px-4 py-2 sm:py-3 text-right font-semibold">Rp 1,000,000</td></tr>
+                        <tr className="text-xs text-slate-500"><td colSpan="2" className="px-3 py-2 italic">* Jika satu kantor maka dapat dua-duanya</td></tr>
+                        
+                        <tr className="hover:bg-slate-100"><td colSpan="2" className="px-3 sm:px-4 py-2 sm:py-3 font-bold text-amber-700 text-sm sm:text-base">SAKIT</td></tr>
+                        <tr><td className="px-3 sm:px-4 py-2 sm:py-3">Opname intensif/ICU/operasi/sakit serius</td><td className="px-3 sm:px-4 py-2 sm:py-3 text-right font-semibold">Rp 1,500,000</td></tr>
+                        <tr><td className="px-3 sm:px-4 py-2 sm:py-3">Rawat inap ≥2 malam (keluarga inti)</td><td className="px-3 sm:px-4 py-2 sm:py-3 text-right font-semibold">Rp 750,000</td></tr>
+                        <tr><td className="px-3 sm:px-4 py-2 sm:py-3">Rawat inap &lt;2 malam (keluarga inti)</td><td className="px-3 sm:px-4 py-2 sm:py-3 text-right font-semibold">Rp 400,000</td></tr>
+                        <tr><td className="px-3 sm:px-4 py-2 sm:py-3">Rawat di rumah ≥5 hari kerja (pegawai)</td><td className="px-3 sm:px-4 py-2 sm:py-3 text-right font-semibold">Rp 600,000</td></tr>
+                        <tr><td className="px-3 sm:px-4 py-2 sm:py-3">Kecelakaan parah membutuhkan perawatan</td><td className="px-3 sm:px-4 py-2 sm:py-3 text-right font-semibold">Rp 750,000</td></tr>
+                        <tr><td className="px-3 sm:px-4 py-2 sm:py-3">Melahirkan (pegawai/pasangan)</td><td className="px-3 sm:px-4 py-2 sm:py-3 text-right font-semibold">Rp 750,000</td></tr>
+                        <tr className="text-xs text-slate-500"><td colSpan="2" className="px-3 py-2 italic">* Bantuan berulang setelah 6 bulan perawatan berkelanjutan</td></tr>
+                        
+                        <tr className="hover:bg-slate-100"><td colSpan="2" className="px-3 sm:px-4 py-2 sm:py-3 font-bold text-amber-700 text-sm sm:text-base">MENINGGAL</td></tr>
+                        <tr><td className="px-3 sm:px-4 py-2 sm:py-3">Keluarga inti (pegawai/pasangan/anak/orang tua/mertua)</td><td className="px-3 sm:px-4 py-2 sm:py-3 text-right font-semibold">Rp 1,500,000</td></tr>
+                        <tr><td className="px-3 sm:px-4 py-2 sm:py-3">Orang tua</td><td className="px-3 sm:px-4 py-2 sm:py-3 text-right font-semibold">Rp 1,000,000</td></tr>
+                        <tr><td className="px-3 sm:px-4 py-2 sm:py-3">Karangan bunga (di luar Babel - ybs/pasangan/orang tua pimpinan)</td><td className="px-3 sm:px-4 py-2 sm:py-3 text-right font-semibold">Rp 500,000</td></tr>
+                        
+                        <tr className="hover:bg-slate-100"><td colSpan="2" className="px-3 sm:px-4 py-2 sm:py-3 font-bold text-amber-700 text-sm sm:text-base">PINDAH/MUTASI</td></tr>
+                        <tr><td className="px-3 sm:px-4 py-2 sm:py-3">Mutasi keluar provinsi</td><td className="px-3 sm:px-4 py-2 sm:py-3 text-right font-semibold">Rp 2,000,000</td></tr>
+                        <tr><td className="px-3 sm:px-4 py-2 sm:py-3">Mutasi dalam provinsi</td><td className="px-3 sm:px-4 py-2 sm:py-3 text-right font-semibold">Rp 500,000</td></tr>
+                        <tr><td className="px-3 sm:px-4 py-2 sm:py-3">Purnabakti (pegawai)</td><td className="px-3 sm:px-4 py-2 sm:py-3 text-right font-semibold">Rp 2,000,000</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
 
-                <h3 className="text-lg sm:text-xl font-bold text-slate-900 mt-8 mb-4">Rate DANSOS (Kesepakatan 2 April 2026)</h3>
-                <div className="overflow-x-auto rounded-xl border border-slate-200 shadow">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gradient-to-r from-rose-600 to-pink-700 text-white">
-                      <tr>
-                        <th className="px-4 py-3 text-left font-semibold">Jenis Kejadian</th>
-                        <th className="px-4 py-3 text-right font-semibold">Nilai (Rp)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium">Menikah (pegawai/anak pegawai)</td><td className="px-4 py-3 text-right font-bold">1,000,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 font-medium" colSpan="2"><strong>Sakit</strong></td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 pl-8">Ybs/Pasangan/Anak sakit opname dan butuh perawatan intensif/tindakan misal masuk ICU dan atau perlu operasi/sakit serius</td><td className="px-4 py-3 text-right font-bold">1,500,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 pl-8">Rawat inap keluarga inti (ybs/pasangan/anak) minimal 2 malam</td><td className="px-4 py-3 text-right font-bold">750,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 pl-8">Rawat inap keluarga inti (ybs/pasangan/anak) kurang dari 2 malam</td><td className="px-4 py-3 text-right font-bold">400,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 pl-8">Rawat di rumah minimal 5 hari kerja (Ybs)</td><td className="px-4 py-3 text-right font-bold">600,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 pl-8">Kecelakaan parah (Ybs) membutuhkan perawatan</td><td className="px-4 py-3 text-right font-bold">750,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 pl-8">Melahirkan (ybs/pasangan)</td><td className="px-4 py-3 text-right font-bold">750,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium" colSpan="2"><strong>Meninggal</strong></td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 pl-8">Meninggal (Ybs/Pasangan/Anak/Orang tua/Mertua)</td><td className="px-4 py-3 text-right font-bold">1,500,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 pl-8">Meninggal (Ybs/Pasangan/Anak/Orang tua/Mertua)</td><td className="px-4 py-3 text-right font-bold">1,000,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 pl-8">Karangan Bunga ketika di luar Babel (Ybs/Pasangan dan Orang tua Pimpinan/Mertua Pimpinan)</td><td className="px-4 py-3 text-right font-bold">500,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 font-medium" colSpan="2"><strong>Pindah/Mutasi</strong></td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 pl-8">Mutasi keluar provinsi (Ybs)</td><td className="px-4 py-3 text-right font-bold">2,000,000</td></tr>
-                      <tr className="bg-white"><td className="px-4 py-3 pl-8">Mutasi dalam provinsi (Ybs)</td><td className="px-4 py-3 text-right font-bold">500,000</td></tr>
-                      <tr className="bg-slate-50"><td className="px-4 py-3 pl-8">Purnabakti (ybs)</td><td className="px-4 py-3 text-right font-bold">2,000,000</td></tr>
-                    </tbody>
-                  </table>
+                {/* Iuran RESAM per Grade */}
+                <div className="rounded-3xl bg-slate-50 border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="bg-gradient-to-r from-sky-500 to-blue-600 text-white px-4 sm:px-6 py-3 sm:py-4">
+                    <h3 className="text-lg sm:text-xl font-bold">Iuran RESAM per Grade</h3>
+                    <p className="text-xs sm:text-sm text-sky-50">Kesepakatan 2 April 2026</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs sm:text-sm">
+                      <thead className="bg-slate-100">
+                        <tr>
+                          <th className="px-3 sm:px-4 py-2 sm:py-3 text-left font-semibold text-slate-700">Grade</th>
+                          <th className="px-3 sm:px-4 py-2 sm:py-3 text-right font-semibold text-slate-700">Iuran/Bulan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {[
+                          ['Grade 15', 'Rp 300,000'],
+                          ['Grade 12', 'Rp 150,000'],
+                          ['Grade 11', 'Rp 135,000'],
+                          ['Grade 10', 'Rp 85,000'],
+                          ['Grade 9', 'Rp 65,000'],
+                          ['Grade 8', 'Rp 55,000'],
+                          ['Grade 7', 'Rp 45,000'],
+                          ['Grade 6', 'Rp 40,000'],
+                          ['Grade 5', 'Rp 30,000'],
+                          ['Grade 4', 'Rp 30,000'],
+                          ['Grade 3', 'Rp 30,000'],
+                          ['Grade 2', 'Rp 25,000'],
+                          ['Grade 1', 'Rp 25,000'],
+                        ].map(([grade, iuran]) => (
+                          <tr key={grade} className="hover:bg-blue-50">
+                            <td className="px-3 sm:px-4 py-2 sm:py-3 font-medium text-slate-700">{grade}</td>
+                            <td className="px-3 sm:px-4 py-2 sm:py-3 text-right font-semibold text-sky-700">{iuran}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* Kegiatan yang dapat dibiayai */}
+              <div className="rounded-2xl sm:rounded-3xl bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200 shadow-sm p-4 sm:p-6">
+                <h3 className="text-lg sm:text-xl font-bold text-emerald-900">Pembiayaan Kegiatan Kebersamaan</h3>
+                <p className="mt-1.5 text-xs sm:text-sm text-emerald-700">Kegiatan yang dapat dibiayai oleh dana RESAM:</p>
+                <div className="mt-3 sm:mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+                  {[
+                    'Seragam (Sehat Bersih Jaga Bersama) / Senam Bersama',
+                    'Bedulang',
+                    'Jumat Bersih',
+                    'Hari Statistik Nasional (HSN)',
+                    'Peringatan 17 Agustus',
+                    'Dan kegiatan lain dalam program Manajemen Perubahan/CAN'
+                  ].map((item, idx) => (
+                    <div key={idx} className="flex gap-2.5">
+                      <div className="text-emerald-600 font-bold text-xs">✓</div>
+                      <div className="text-emerald-900 text-xs sm:text-sm">{item}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -738,87 +908,72 @@
 
           <section id="dokumentasi" className="py-10 sm:py-12 bg-slate-900 text-white">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-              <SectionTitle eyebrow="Dokumentasi" title="Dokumentasi RESAM & DANSOS" desc="Koleksi lengkap dokumentasi kegiatan dan aktivitas RESAM dan DANSOS dari Google Drive." isDark={true} />
-              
-              {/* RESAM Documentation */}
-              <div className="rounded-2xl sm:rounded-3xl overflow-hidden border border-white/20 shadow-2xl bg-slate-800 mb-6 sm:mb-8">
+              <SectionTitle eyebrow="Dokumentasi" title="Dokumentasi RESAM" desc="Koleksi lengkap dokumentasi kegiatan dan aktivitas RESAM dari Google Drive." />
+
+              {/* Embedded Drive Viewer */}
+              <div className="rounded-2xl sm:rounded-3xl overflow-hidden border border-white/20 shadow-2xl bg-slate-800">
                 <div className="p-4 sm:p-6 border-b border-white/10 bg-gradient-to-r from-slate-900 to-slate-800">
                   <div className="flex items-center gap-3">
                     <div className="text-2xl">📁</div>
                     <div>
-                      <div className="font-bold text-sm sm:text-base text-white">Dokumentasi RESAM</div>
-                      <div className="text-xs sm:text-sm text-slate-300">Grid View - Semua dokumentasi kegiatan RESAM</div>
+                      <div className="font-bold text-sm sm:text-base text-white">Grid View - Semua Dokumentasi</div>
+                      <div className="text-xs sm:text-sm text-slate-300">Folder lengkap dari Google Drive</div>
                     </div>
                   </div>
                 </div>
-                <iframe title="Dokumentasi RESAM" src="https://drive.google.com/embeddedfolderview?id=16tE9MUvmE4H1iPnRG59qhod_I3HiTytw#grid" className="w-full h-96 sm:h-[500px] bg-white"></iframe>
+                <iframe title="Dokumentasi RESAM" src={DRIVE_EMBED_URL} className="w-full h-96 sm:h-[600px] bg-white"></iframe>
               </div>
-
-              {/* DANSOS Documentation */}
-              {/*<div className="rounded-2xl sm:rounded-3xl overflow-hidden border border-white/20 shadow-2xl bg-slate-800">
-                <div className="p-4 sm:p-6 border-b border-white/10 bg-gradient-to-r from-rose-900 to-slate-800">
-                  <div className="flex items-center gap-3">
-                    <div className="text-2xl">📁</div>
-                    <div>
-                      <div className="font-bold text-sm sm:text-base text-white">Dokumentasi DANSOS</div>
-                      <div className="text-xs sm:text-sm text-slate-300">Grid View - Semua dokumentasi kegiatan DANSOS</div>
-                    </div>
-                  </div>
-                </div>
-                <iframe title="Dokumentasi DANSOS" src="https://drive.google.com/embeddedfolderview?id=16tE9MUvmE4H1iPnRG59qhod_I3HiTytw#grid" className="w-full h-96 sm:h-[500px] bg-white"></iframe>
-              </div>*/}
             </div>
           </section>
 
-          <footer className="bg-slate-900 text-white py-8 sm:py-12">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
-                <div>
-                  <div className="flex items-center gap-2 sm:gap-3 font-bold text-white shrink-0 mb-4">
-                    <img src="logo.png" alt="RESAM Logo" className="h-8 sm:h-10 w-8 sm:w-10 rounded-xl shadow object-contain" />
-                    <div>
-                      <div className="text-sm sm:text-lg leading-none">RESAM & DANSOS</div>
-                      <div className="text-[10px] sm:text-xs text-slate-400 font-medium">BPS Provinsi Kepulauan Bangka Belitung</div>
-                    </div>
-                  </div>
-                  <p className="text-sm text-slate-300 leading-6">Platform transparansi dana kebersamaan dan sosial BPS Provinsi Kepulauan Bangka Belitung.</p>
-                </div>
-                <div>
-                  <h4 className="font-semibold text-white mb-4">Navigasi</h4>
-                  <ul className="space-y-2 text-sm text-slate-300">
-                    <li><a href="#beranda" className="hover:text-sky-400 transition">Beranda</a></li>
-                    <li><a href="#tentang" className="hover:text-sky-400 transition">Tentang</a></li>
-                    <li><a href="#keuangan" className="hover:text-sky-400 transition">Data</a></li>
-                    <li><a href="#rate" className="hover:text-sky-400 transition">Rate</a></li>
-                    <li><a href="#dokumentasi" className="hover:text-sky-400 transition">Dokumentasi</a></li>
-                  </ul>
-                </div>
-                <div>
-                  <h4 className="font-semibold text-white mb-4">Kontak</h4>
-                  <ul className="space-y-2 text-sm text-slate-300">
-                    <li>BPS Provinsi Kepulauan Bangka Belitung</li>
-                    <li>Jl. Soekarno-Hatta, Pangkalpinang</li>
-                    <li>Kepulauan Bangka Belitung</li>
-                  </ul>
-                </div>
-                <div>
-                  <h4 className="font-semibold text-white mb-4">Data</h4>
-                  <ul className="space-y-2 text-sm text-slate-300">
-                    <li><a href={RESAM_SHEET_URL} target="_blank" className="hover:text-sky-400 transition">Data RESAM</a></li>
-                    <li><a href={DANSOS_SHEET_URL} target="_blank" className="hover:text-sky-400 transition">Data DANSOS</a></li>
-                  </ul>
-                </div>
-              </div>
-              <div className="mt-8 pt-8 border-t border-slate-700 text-center text-sm text-slate-400">
-                <p>&copy; 2024 BPS Provinsi Kepulauan Bangka Belitung. All rights reserved.</p>
+          <section className="py-10 sm:py-12 bg-gradient-to-r from-sky-700 to-blue-900 text-white">
+            <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+              <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black">Butuh Informasi Lebih Lanjut?</h2>
+              <p className="mt-3 text-xs sm:text-sm lg:text-base text-sky-100 leading-5 sm:leading-6">Sistem ini dapat dikembangkan lebih lanjut dengan fitur login pengurus, input transaksi, ekspor laporan, dan manajemen dokumentasi kegiatan.</p>
+              <div className="mt-6 flex flex-col sm:flex-row flex-wrap justify-center gap-2.5 sm:gap-3">
+                <a href={DRIVE_FOLDER_URL} target="_blank" className="rounded-xl bg-rose-500 hover:bg-rose-600 px-3 sm:px-5 py-2 sm:py-2.5 font-semibold text-center text-xs sm:text-sm">Buka Dokumentasi</a>
+                <a href={CSV_URL} target="_blank" className="rounded-xl bg-white text-sky-800 hover:bg-sky-50 px-3 sm:px-5 py-2 sm:py-2.5 font-semibold text-center text-xs sm:text-sm">Lihat Data Sumber</a>
               </div>
             </div>
+          </section>
+
+          <footer className="bg-slate-950 text-slate-300 py-8 sm:py-10">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
+              <div>
+                <div className="flex items-center gap-2">
+                  <img src="logo.png" alt="RESAM Logo" className="h-8 w-8 rounded object-contain" />
+                  <div className="text-white font-bold text-xl">RESAM</div>
+                </div>
+                <p className="mt-3 text-sm leading-7">Platform digital transparansi RESAM untuk BPS Provinsi Kepulauan Bangka Belitung.</p>
+              </div>
+              <div>
+                <div className="text-white font-semibold">Menu</div>
+                <ul className="mt-3 space-y-2 text-sm">
+                  <li><a href="#beranda">Beranda</a></li>
+                  <li><a href="#tentang">Tentang</a></li>
+                  <li><a href="#keuangan">Data</a></li>
+                  <li><a href="#dokumentasi">Dokumentasi</a></li>
+                </ul>
+              </div>
+              <div>
+                <div className="text-white font-semibold">Data Sumber</div>
+                <ul className="mt-3 space-y-2 text-sm break-all">
+                  <li><a href={SHEET_URL} target="_blank">Google Sheets RESAM</a></li>
+                  <li><a href={DRIVE_FOLDER_URL} target="_blank">Google Drive Dokumentasi</a></li>
+                </ul>
+              </div>
+              <div>
+                <div className="text-white font-semibold">Catatan</div>
+                <p className="mt-3 text-sm leading-7">Untuk lingkungan produksi internal, sumber data sebaiknya dihubungkan melalui API atau Apps Script agar kontrol akses dan validasi data lebih stabil.</p>
+              </div>
+            </div>
+            <div className="mt-10 text-center text-xs text-slate-500">© 2026 Sistem RESAM - dibuat dengan HTML, React, Tailwind, dan Chart.js</div>
           </footer>
         </div>
       );
     }
 
-    ReactDOM.render(<App />, document.getElementById('root'));
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
   </script>
 </body>
 </html>
