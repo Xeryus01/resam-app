@@ -384,7 +384,7 @@
           item.expense += r.debit;
           item.saldo = r.saldo || item.saldo;
         });
-        const arr = [...map.values()];
+        const arr = [...map.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(entry => entry[1]);
         return arr;
       }, [yearFilteredRows]);
 
