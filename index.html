@@ -132,7 +132,8 @@
     function transformRows(rawRows) {
       const cleaned = rawRows.map(r => r.map(c => String(c || '').trim()));
       const records = [];
-      for (const r of cleaned) {
+      for (let idx = 0; idx < cleaned.length; idx++) {
+        const r = cleaned[idx];
         if (r.length < 2) continue;
         const dateCandidate = parseDateIndo(r[0]);
         if (!dateCandidate) continue;
@@ -150,6 +151,7 @@
           kredit,
           debit,
           saldo,
+          rowIndex: idx,
         });
       }
       return records.sort((a,b) => a.tanggal - b.tanggal);
@@ -158,7 +160,8 @@
     function transformRowsDansos(rawRows) {
       const cleaned = rawRows.map(r => r.map(c => String(c || '').trim()));
       const records = [];
-      for (const r of cleaned) {
+      for (let idx = 0; idx < cleaned.length; idx++) {
+        const r = cleaned[idx];
         if (r.length < 3) continue;
         // Coba gunakan kolom A (index 0), jika kosong gunakan kolom B (index 1)
         let dateCandidate = parseDateIndo(r[0]);
@@ -182,6 +185,7 @@
           kredit,
           debit,
           saldo,
+          rowIndex: idx,
         });
       }
       return records.sort((a,b) => a.tanggal - b.tanggal);
@@ -337,7 +341,7 @@
       const yearFilteredRows = useMemo(() => {
         return currentRows.filter(r => {
           return yearFilter === 'all' || String(r.tanggal.getFullYear()) === yearFilter;
-        }).sort((a, b) => b.tanggal - a.tanggal);
+        }).sort((a, b) => b.rowIndex - a.rowIndex);
       }, [currentRows, yearFilter]);
 
       // Filter by year and search query for table
@@ -364,12 +368,13 @@
         const totalPemasukan = yearFilteredRows.reduce((s, r) => s + r.kredit, 0);
         const totalPengeluaran = yearFilteredRows.reduce((s, r) => s + r.debit, 0);
         
-        // For DANSOS: take from the last row (chronologically last)
-        // For RESAM: take from the most recent date
-        let latestRow = yearFilteredRows.length ? yearFilteredRows[0] : null;
-        if (activeTab === 'dansos' && yearFilteredRows.length > 0) {
-          const sorted = [...yearFilteredRows].sort((a, b) => a.tanggal - b.tanggal);
-          latestRow = sorted[sorted.length - 1];
+        // Take from the last row by rowIndex (actual last row in spreadsheet)
+        // This ensures the balance is from the most recent data entry, not just latest date
+        let latestRow = null;
+        if (yearFilteredRows.length > 0) {
+          latestRow = yearFilteredRows.reduce((latest, current) => {
+            return (current.rowIndex > (latest?.rowIndex ?? -1)) ? current : latest;
+          }, null);
         }
         
         const saldoAkhir = latestRow ? latestRow.saldo : 0;
@@ -405,7 +410,7 @@
         if (text.includes('kegiatan') || text.includes('bedulang') || text.includes('hsn') || text.includes('senam') || 
             text.includes('jumat bersih') || text.includes('17 agustus') || text.includes('hut') || text.includes('acara') ||
             text.includes('upacara') || text.includes('gathering') || text.includes('olahraga') || text.includes('games') ||
-            text.includes('hadiah') || text.includes('piala') || text.includes('trophy')) {
+            text.includes('hadiah') || text.includes('piala') || text.includes('trophy') || text.includes('sedulang')) {
           return 'Kegiatan';
         }
         
@@ -731,7 +736,7 @@
 
                   <div className="grid gap-2 text-sm text-slate-700 sm:grid-cols-2 mb-4">
                     <div className="rounded-2xl bg-white border border-slate-200 p-3">a. Seragam (Sehat Bersih Jaga Bersama)/Senam Bersama</div>
-                    <div className="rounded-2xl bg-white border border-slate-200 p-3">b. Bedulang</div>
+                    <div className="rounded-2xl bg-white border border-slate-200 p-3">b. Sedulang</div>
                     <div className="rounded-2xl bg-white border border-slate-200 p-3">c. Jumat Bersih</div>
                     <div className="rounded-2xl bg-white border border-slate-200 p-3">d. Hari Statistik Nasional (HSN)</div>
                     <div className="rounded-2xl bg-white border border-slate-200 p-3">e. Peringatan 17 Agustus</div>
@@ -789,7 +794,7 @@
                         <div className="flex items-center justify-between"><span className="text-slate-700">Opname intensif / ICU / operasi</span><span className="font-semibold text-rose-700">Rp 1.500.000</span></div>
                         <div className="flex items-center justify-between"><span className="text-slate-700">Rawat inap keluarga inti ≥ 2 malam</span><span className="font-semibold text-rose-700">Rp 750.000</span></div>
                         <div className="flex items-center justify-between"><span className="text-slate-700">Rawat inap keluarga inti &lt; 2 malam</span><span className="font-semibold text-rose-700">Rp 400.000</span></div>
-                        <div className="flex items-center justify-between"><span className="text-slate-700">Rawat di rumah minimal 5 hari kerja</span><span className="font-semibold text-rose-700">Rp 600.000</span></div>
+                        <div className="flex items-center justify-between"><span className="text-slate-700">Rawat ybs di rumah minimal 5 hari kerja</span><span className="font-semibold text-rose-700">Rp 600.000</span></div>
                         <div className="flex items-center justify-between"><span className="text-slate-700">Kecelakaan parah yang perlu perawatan</span><span className="font-semibold text-rose-700">Rp 750.000</span></div>
                         <div className="flex items-center justify-between"><span className="text-slate-700">Melahirkan (ybs/pasangan)</span><span className="font-semibold text-rose-700">Rp 750.000</span></div>
                       </div>

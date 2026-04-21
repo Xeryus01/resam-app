@@ -438,7 +438,7 @@
       const yearFilteredRows = useMemo(() => {
         return rows.filter(r => {
           return yearFilter === 'all' || String(r.tanggal.getFullYear()) === yearFilter;
-        }).sort((a, b) => b.tanggal - a.tanggal);
+        }).sort((a, b) => b.rowIndex - a.rowIndex);
       }, [rows, yearFilter]);
 
       // Filter by year and search query for table

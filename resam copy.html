@@ -439,7 +439,7 @@
       const yearFilteredRows = useMemo(() => {
         return rows.filter(r => {
           return yearFilter === 'all' || String(r.tanggal.getFullYear()) === yearFilter;
-        }).sort((a, b) => b.tanggal - a.tanggal);
+        }).sort((a, b) => b.rowIndex - a.rowIndex);
       }, [rows, yearFilter]);
 
       // Filter by year and search query for table
@@ -499,12 +499,12 @@
 
       const stats = useMemo(() => {
         const currentYear = new Date().getFullYear();
-        const currentYearRows = rows.filter(r => r.tanggal.getFullYear() === currentYear).sort((a, b) => a.tanggal - b.tanggal);
+        const currentYearRows = rows.filter(r => r.tanggal.getFullYear() === currentYear).sort((a, b) => b.rowIndex - a.rowIndex);
         const totalPemasukan = currentYearRows.reduce((s, r) => s + r.kredit, 0);
         const totalPengeluaran = currentYearRows.reduce((s, r) => s + r.debit, 0);
-        const saldoAkhir = currentYearRows.length ? currentYearRows[currentYearRows.length - 1].saldo : 0;
+        const saldoAkhir = currentYearRows.length ? currentYearRows[0].saldo : 0;
         const totalTransaksi = yearFilteredRows.length;
-        const latest = currentYearRows.length ? currentYearRows[currentYearRows.length - 1] : yearFilteredRows.length ? yearFilteredRows[yearFilteredRows.length - 1] : null;
+        const latest = currentYearRows.length ? currentYearRows[0] : yearFilteredRows.length ? yearFilteredRows[0] : null;
         const danaSosial = yearFilteredRows
           .filter(r => slug(`${r.uraian} ${r.rincian}`).includes('dana sosial') || slug(r.uraian).includes('dansos'))
           .reduce((s, r) => s + Math.max(r.debit, r.kredit), 0);
